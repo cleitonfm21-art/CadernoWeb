@@ -39,8 +39,6 @@
     .sheet-preview img { width: 65%; }
     .sheet-preview-text { inset: 5%; overflow: hidden; white-space: pre-wrap;
       overflow-wrap: break-word; font: 18px/1.5 system-ui; }
-    .title-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-    #headerClock { color: #526278; font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
     h1 { font-size: 19px; margin: 0 0 2px; letter-spacing: -.02em; }
     .menu-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
     .editor-controls { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; margin-top: 5px; }
@@ -108,10 +106,7 @@
 <body>
   <header>
     <div class="header-inner">
-      <div class="title-row">
-        <h1>CadernoWeb</h1>
-        <time id="headerClock"></time>
-      </div>
+      <h1>CadernoWeb</h1>
       <div class="context" aria-live="polite">
         <strong id="location"></strong>
         <span id="folderLocation"></span>
@@ -1081,19 +1076,6 @@
       setTool('pen');
       showSelection();
       load();
-      const headerClock = control('headerClock');
-      const clockFormat = new Intl.DateTimeFormat('pt-BR', {
-        day: '2-digit', month: '2-digit', year: 'numeric',
-        hour: '2-digit', minute: '2-digit', hour12: false
-      });
-      function updateHeaderClock() {
-        const now = new Date();
-        headerClock.dateTime = now.toISOString();
-        headerClock.textContent = clockFormat.format(now).replace(', ', ' ');
-      }
-      updateHeaderClock();
-      setInterval(updateHeaderClock, 1000);
-      document.addEventListener('visibilitychange', updateHeaderClock);
       const header = document.querySelector('header');
       new ResizeObserver(() => {
         document.documentElement.style.setProperty('--header-height', `${header.offsetHeight}px`);
