@@ -917,8 +917,11 @@
           const [x, y] = point(ev);
           if (current.kind === 'rectangle') syncRectangle(current, x, y);
           else {
-            const last = current.points[current.points.length-1];
-            if (Math.hypot(x - last[0], y - last[1]) > .65) current.points.push([x, y]);
+            const isPencilStroke = current.kind === 'pen' && e.pointerType === 'pen';
+            if (isPencilStroke && ev.pressure === 0) continue;
+            const last = current.points[current.points.length - 1];
+            const minimumMove = isPencilStroke && current.points.length === 1 ? 3 : .65;
+            if (Math.hypot(x - last[0], y - last[1]) > minimumMove) current.points.push([x, y]);
           }
         }
         redraw();
@@ -929,7 +932,7 @@
         if (!cancelled) {
           const [x, y] = point(e);
           if (current.kind === 'rectangle') syncRectangle(current, x, y);
-          else current.points.push([x, y]);
+          else if (current.kind !== 'pen' || e.pointerType !== 'pen') current.points.push([x, y]);
           const a = current;
           if (a.kind !== 'rectangle' || a.w >= 3 || a.h >= 3) {
             if (a.kind === 'rectangle') { delete a.startX; delete a.startY; }
