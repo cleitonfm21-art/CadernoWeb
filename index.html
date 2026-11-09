@@ -17,7 +17,7 @@
     * { box-sizing: border-box; }
     body { margin: 0; background: #eff1f5; color: #1c2430; }
     header { position: sticky; top: 0; z-index: 5; background: #fff; border-bottom: 1px solid #dce0e7; box-shadow: 0 2px 12px #1721390d; }
-    .header-inner { max-width: 1050px; padding: calc(12px + env(safe-area-inset-top)) 16px 12px; margin: auto; }
+    .header-inner { max-width: 1050px; padding: calc(6px + env(safe-area-inset-top)) 16px 6px; margin: auto; }
     :root { scroll-padding-top: calc(var(--header-height, 205px) + 12px); }
     .sheet-list { display: grid; gap: 22px; }
     .sheet { width: min(100%, 800px); min-width: 0; margin-inline: auto; }
@@ -30,9 +30,9 @@
       overflow-wrap: break-word; font: 18px/1.5 system-ui; }
     h1 { font-size: 19px; margin: 0 0 2px; letter-spacing: -.02em; }
     .menu-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-    .editor-controls { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
-    .editor-controls > button, .editor-controls select { width: 100%; min-width: 0; min-height: 44px; height: 100%; }
-    .editor-controls > button { padding-inline: 4px; }
+    .editor-controls { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; margin-top: 5px; }
+    .editor-controls > button, .editor-controls select { width: 100%; min-width: 0; min-height: 36px; height: 100%; font-size: 13px; }
+    .editor-controls > button { padding: 4px; }
     .editor-controls select { max-width: none; padding-inline: 6px; }
     .editor-controls .status { grid-column: 4 / 6; align-self: center; text-align: right; }
     .page-picker, .menu-label { display: flex; align-items: center; gap: 8px; font-size: 14px; }
@@ -52,7 +52,7 @@
     .menu .menu-label { display: grid; gap: 6px; }
     .menu .menu-label select { width: 100%; max-width: none; }
     .menu > .menu-actions + section { margin-top: 12px; }
-    .context { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin-top: 8px; }
+    .context { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; margin-top: 3px; }
     .context strong { overflow-wrap: anywhere; }
     .context span { font-size: 13px; color: #526278; overflow-wrap: anywhere; }
     .context [hidden] { display: none; }
@@ -79,13 +79,20 @@
     #pageText { position: absolute; inset: 5%; width: 90%; height: 90%; resize: none;
       border: 0; padding: 0; background: transparent; font: 18px/1.5 system-ui; pointer-events: none; }
     #pageText.editing { z-index: 2; pointer-events: auto; outline: 2px solid #73aaf2; }
-    #surveyFields { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; padding: 8px 0; }
-    #surveyFields label { display: grid; gap: 4px; }
+    #surveyFields { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 8px; padding: 8px 0; }
+    #surveyFields label { display: grid; gap: 4px; grid-column: span 4; min-width: 0; }
+    #surveyFields .field-wide { grid-column: span 8; }
+    #surveyFields .field-short { grid-column: span 2; }
+    @media (max-width: 520px) {
+      #surveyFields label { grid-column: span 6; }
+      #surveyFields .field-wide { grid-column: span 12; }
+      #surveyFields .field-short { grid-column: span 4; }
+    }
     #surveyFields input { min-width: 0; font: inherit; }
     #surveySummary { white-space: pre-wrap; overflow-wrap: anywhere; }
     dialog { max-width: min(90vw, 480px); }
     dialog label { display: block; margin: 8px 0; }
-    @media (max-width: 500px) { .header-inner { padding: calc(9px + env(safe-area-inset-top)) 11px 9px; } h1 { font-size: 17px; } button { font-size: 13px; padding: 8px 10px; } main { margin-top: 12px; padding: 0 11px; } }
+    @media (max-width: 500px) { .header-inner { padding: calc(6px + env(safe-area-inset-top)) 11px 6px; } h1 { font-size: 17px; } button { font-size: 13px; padding: 8px 10px; } main { margin-top: 12px; padding: 0 11px; } }
   </style>
 </head>
 <body>
@@ -606,6 +613,8 @@
           const label = document.createElement('label');
           const input = document.createElement('input');
           label.textContent = field.label;
+          if (['Cliente', 'Endereço', 'E-mail'].includes(field.label)) label.className = 'field-wide';
+          if (['CEP', 'Número'].includes(field.label)) label.className = 'field-short';
           input.value = field.value;
           input.addEventListener('input', () => {
             const note = library.notes[noteIndex];
