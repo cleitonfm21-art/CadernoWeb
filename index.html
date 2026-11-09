@@ -19,13 +19,29 @@
     header { position: sticky; top: 0; z-index: 5; background: #fff; border-bottom: 1px solid #dce0e7; box-shadow: 0 2px 12px #1721390d; }
     .header-inner { max-width: 1050px; padding: 12px 16px; margin: auto; }
     h1 { font-size: 19px; margin: 0 0 2px; letter-spacing: -.02em; }
-    .sub { margin: 0 0 12px; font-size: 12px; color: #657083; }
-    .tools, .options { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
-    .options, .library { margin-top: 9px; }
-    .library { padding-bottom: 6px; }
-    .library { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
-    .library label { display: flex; gap: 5px; align-items: center; font-size: 14px; min-width: 0; }
-    select { font: inherit; max-width: min(210px, 55vw); min-height: 38px; }
+    .topbar, .tools, .options, .menu-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .topbar { justify-content: space-between; }
+    .topbar h1 { margin-right: auto; }
+    .tools { margin-top: 10px; }
+    .options { margin-top: 8px; }
+    .page-picker, .menu-label { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+    select { font: inherit; color: inherit; max-width: min(220px, 55vw); min-height: 42px;
+      border: 1px solid #cdd4df; border-radius: 8px; background: #fff; }
+    button, .options summary { min-height: 42px; }
+    .menu-button { background: #e9eff9; }
+    dialog.menu { width: min(92vw, 520px); max-width: none; padding: 20px; border: 1px solid #dce0e7;
+      border-radius: 16px; color: inherit; box-shadow: 0 12px 40px #17213930; }
+    dialog::backdrop { background: #17213955; }
+    .menu h2 { margin: 0 0 10px; font-size: 19px; }
+    .menu section { padding: 12px 0; border-top: 1px solid #e0e5ee; }
+    .menu h3 { margin: 0 0 7px; font-size: 15px; }
+    .menu p { margin: 0 0 10px; color: #657083; font-size: 14px; }
+    .menu footer { margin-top: 12px; text-align: right; }
+    .danger { color: #a32525; }
+    #surveyPanel { width: min(100%, 800px); margin: 0 auto 12px; padding: 10px 12px;
+      background: #fff; border: 1px solid #dce0e7; border-radius: 9px; }
+    #surveyPanel summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+    #surveySummary { width: min(100%, 800px); margin: 0 auto 12px; }
     button { font: inherit; font-size: 14px; border: 1px solid #cdd4df; background: #f7f8fb; border-radius: 9px; padding: 9px 12px; color: inherit; cursor: pointer; }
     button:hover { background: #eaf0fa; }
     button:focus-visible { outline: 3px solid #73aaf2; outline-offset: 2px; }
@@ -57,21 +73,34 @@
 <body>
   <header>
     <div class="header-inner">
-      <h1>CadernoWeb</h1>
-      <div class="library" aria-label="Organização do caderno">
-        <label>Pasta <select id="folderSelect"></select></label>
-        <button type="button" id="newFolder">Nova pasta</button>
-        <button type="button" id="renameFolder">Renomear pasta</button>
-        <button type="button" id="deleteFolder">Excluir pasta</button>
-        <label>Nota <select id="noteSelect"></select></label>
-        <button type="button" id="newNote">Nova nota</button>
-        <button type="button" id="renameNote">Renomear nota</button>
-        <button type="button" id="moveNote">Mover nota</button>
-        <button type="button" id="deleteNote">Excluir nota</button>
-        <label>Folha <select id="pageSelect"></select></label>
+      <div class="topbar">
+        <h1>CadernoWeb</h1>
+        <button type="button" class="menu-button" data-menu="libraryMenu">Cadernos</button>
+        <label class="page-picker">Folha <select id="pageSelect"></select></label>
         <button type="button" id="newPage">Nova folha</button>
-        <button type="button" id="deletePage">Excluir folha</button>
+        <button type="button" data-menu="backupMenu">Backup</button>
       </div>
+      <dialog class="menu" id="libraryMenu" aria-labelledby="libraryTitle">
+        <h2 id="libraryTitle">Pastas e notas</h2>
+        <section>
+          <label class="menu-label">Pasta <select id="folderSelect"></select></label>
+          <div class="menu-actions">
+            <button type="button" id="newFolder">Nova pasta</button>
+            <button type="button" id="renameFolder">Renomear pasta</button>
+            <button type="button" id="deleteFolder" class="danger">Excluir pasta</button>
+          </div>
+        </section>
+        <section>
+          <label class="menu-label">Nota <select id="noteSelect"></select></label>
+          <div class="menu-actions">
+            <button type="button" id="newNote">Nova nota</button>
+            <button type="button" id="renameNote">Renomear nota</button>
+            <button type="button" id="moveNote">Mover nota</button>
+            <button type="button" id="deleteNote" class="danger">Excluir nota</button>
+          </div>
+        </section>
+        <footer><form method="dialog"><button>Voltar à folha</button></form></footer>
+      </dialog>
       <dialog id="moveDialog">
         <form method="dialog">
           <label>Pasta de destino <select id="moveDestination"></select></label>
@@ -98,22 +127,49 @@
         <button type="button" data-tool="hand" aria-pressed="false">✋ Navegar</button>
         <button type="button" id="undo" class="right" disabled>↶ Voltar</button>
       </div>
-      <div class="options">
+      <div class="options" aria-label="Opções da folha">
         <button type="button" id="editText" aria-pressed="false">Digitar</button>
-        <button type="button" id="addPhoto">Adicionar foto</button>
-        <button type="button" id="takePhoto">Câmera</button>
-        <button type="button" id="adjustPhoto">Ajustar foto</button>
-        <input type="file" id="photoFile" accept="image/*" hidden>
-        <input type="file" id="cameraFile" accept="image/*" capture="environment" hidden>
-        <label>Tinta <input type="color" id="inkColor" value="#18232d"></label>
-        <label>Cor do papel <input type="color" id="paperColor" value="#ffffff"></label>
-        <button type="button" id="paperToggle">Papel: quadriculado</button>
-        <button type="button" id="clear">Limpar folha</button>
-        <button type="button" id="exportBackup">Exportar backup</button>
-        <button type="button" id="restoreBackup">Restaurar backup</button>
-        <input type="file" id="backupFile" accept=".json,application/json" hidden>
+        <button type="button" data-menu="photoMenu" data-needs-page>Foto</button>
+        <button type="button" data-menu="paperMenu" data-needs-page>Papel e cores</button>
         <span id="status" class="status right" aria-live="polite">Carregando…</span>
       </div>
+      <dialog class="menu" id="photoMenu" aria-labelledby="photoTitle">
+        <h2 id="photoTitle">Foto da folha</h2>
+        <div class="menu-actions">
+          <button type="button" id="addPhoto">Adicionar foto</button>
+          <button type="button" id="takePhoto">Câmera</button>
+          <button type="button" id="adjustPhoto">Ajustar foto</button>
+        </div>
+        <footer><form method="dialog"><button>Voltar à folha</button></form></footer>
+      </dialog>
+      <dialog class="menu" id="paperMenu" aria-labelledby="paperTitle">
+        <h2 id="paperTitle">Papel e cores</h2>
+        <div class="menu-actions">
+          <button type="button" id="paperToggle">Papel: quadriculado</button>
+          <label class="menu-label">Tinta <input type="color" id="inkColor" value="#18232d"></label>
+          <label class="menu-label">Cor do papel <input type="color" id="paperColor" value="#ffffff"></label>
+        </div>
+        <section>
+          <h3>Conteúdo da folha</h3>
+          <div class="menu-actions">
+            <button type="button" id="clear" class="danger">Limpar desenho</button>
+            <button type="button" id="deletePage" class="danger">Excluir folha</button>
+          </div>
+        </section>
+        <footer><form method="dialog"><button>Voltar à folha</button></form></footer>
+      </dialog>
+      <dialog class="menu" id="backupMenu" aria-labelledby="backupTitle">
+        <h2 id="backupTitle">Backup</h2>
+        <p>Exporte uma cópia das pastas, notas e folhas ou restaure um arquivo salvo.</p>
+        <div class="menu-actions">
+          <button type="button" id="exportBackup">Exportar backup</button>
+          <button type="button" id="restoreBackup">Restaurar backup</button>
+        </div>
+        <footer><form method="dialog"><button>Voltar à folha</button></form></footer>
+      </dialog>
+      <input type="file" id="photoFile" accept="image/*" hidden>
+      <input type="file" id="cameraFile" accept="image/*" capture="environment" hidden>
+      <input type="file" id="backupFile" accept=".json,application/json" hidden>
     </div>
   </header>
   <main>
@@ -249,6 +305,7 @@
         setOptions(pageSelect, note ? note.pages.map((_, i) => [`Folha ${i + 1}`, i]) : [], pageIndex);
         noteSelect.disabled = pageSelect.disabled = renameNote.disabled = moveNote.disabled = newPage.disabled = !note;
         document.querySelector('#paperToggle').disabled = document.querySelector('#clear').disabled = !page;
+        document.querySelectorAll('[data-needs-page]').forEach(button => { button.disabled = !page; });
         paper.hidden = !page;
         locationLabel.textContent = page ? `${note.title} · Folha ${pageIndex + 1}` : 'Crie uma nota para começar.';
         setTextEditing(false);
@@ -661,7 +718,13 @@
           event.preventDefault();
         }
       });
-      document.querySelector('#exportBackup').addEventListener('click', exportBackup);
+      document.querySelectorAll('[data-menu]').forEach(button => {
+        button.addEventListener('click', () => control(button.dataset.menu).showModal());
+      });
+      control('exportBackup').addEventListener('click', () => {
+        control('backupMenu').close();
+        exportBackup();
+      });
       control('editText').addEventListener('click', () => setTextEditing(pageText.readOnly));
       pageText.addEventListener('input', () => {
         page.text = pageText.value;
@@ -682,12 +745,13 @@
         saveLibrary(withNote({ ...library.notes[noteIndex], survey: [...surveyFields(), { label, value: '' }] }),
           folderIndex, noteIndex, pageIndex);
       });
-      control('addPhoto').addEventListener('click', () => control('photoFile').click());
-      control('takePhoto').addEventListener('click', () => control('cameraFile').click());
+      control('addPhoto').addEventListener('click', () => { control('photoMenu').close(); control('photoFile').click(); });
+      control('takePhoto').addEventListener('click', () => { control('photoMenu').close(); control('cameraFile').click(); });
       for (const id of ['photoFile', 'cameraFile']) control(id).addEventListener('change', event => loadPhoto(event.target));
       const photoControls = { scale: 'photoScale', width: 'photoWidth', height: 'photoHeight', x: 'photoX', y: 'photoY' };
       control('adjustPhoto').addEventListener('click', () => {
         for (const [key, id] of Object.entries(photoControls)) control(id).value = page.photo[key];
+        control('photoMenu').close();
         control('photoDialog').showModal();
       });
       control('savePhoto').addEventListener('click', event => {
@@ -736,7 +800,10 @@
 
       const backupFile = document.querySelector('#backupFile');
       const restoreButton = document.querySelector('#restoreBackup');
-      restoreButton.addEventListener('click', () => backupFile.click());
+      restoreButton.addEventListener('click', () => {
+        control('backupMenu').close();
+        backupFile.click();
+      });
       backupFile.addEventListener('change', async () => {
         const file = backupFile.files[0];
         backupFile.value = '';
