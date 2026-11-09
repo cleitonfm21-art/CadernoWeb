@@ -383,11 +383,25 @@
           previewButton.classList.toggle('grid', sheet.paperStyle === 'grid');
           previewButton.style.backgroundColor = sheet.paperColor ?? '#fff';
           previewButton.setAttribute('aria-label', `Editar folha ${index + 1}`);
-          previewButton.addEventListener('click', () => {
+          const activateSheet = () => {
             const previousTop = section.getBoundingClientRect().top;
             select(folderIndex, noteIndex, index);
             window.scrollBy(0, paper.parentElement.getBoundingClientRect().top - previousTop);
             persist();
+          };
+          previewButton.addEventListener('pointerdown', event => {
+            if (tool === 'hand' || !pageText.readOnly || pointerId !== null || event.button !== 0) return;
+            activateSheet();
+            beginDrawing(event);
+          });
+          previewButton.addEventListener('click', () => {
+            if (pointerId !== null) return;
+            const editing = !pageText.readOnly;
+            activateSheet();
+            if (editing) {
+              setTextEditing(true);
+              pageText.focus({ preventScroll: true });
+            }
           });
 
           if (sheet.photo) {
@@ -414,6 +428,7 @@
           return section;
         });
         list.replaceChildren(...sheets);
+        updatePreviewGestures();
       }
 
       function select(nextFolder, nextNote, nextPage = 0) {
@@ -548,8 +563,16 @@
         return { ...library, notes };
       }
 
+      function updatePreviewGestures() {
+        const drawing = tool !== 'hand' && pageText.readOnly;
+        document.querySelectorAll('.sheet-preview').forEach(button => {
+          button.style.touchAction = drawing ? 'none' : 'pan-y';
+        });
+      }
+
       function setTextEditing(editing) {
         pageText.readOnly = !editing;
+        updatePreviewGestures();
         pageText.classList.toggle('editing', editing);
         control('editText').setAttribute('aria-pressed', String(editing));
         control('editText').textContent = editing ? 'Concluir texto' : 'Digitar';
@@ -705,8 +728,8 @@
         a.w = Math.abs(x - a.startX); a.h = Math.abs(y - a.startY);
       }
       function setTool(next) {
-        setTextEditing(false);
         tool = next;
+        setTextEditing(false);
         document.querySelectorAll('[data-tool]').forEach(btn => btn.setAttribute('aria-pressed', String(btn.dataset.tool === next)));
         canvas.style.pointerEvents = next === 'hand' ? 'none' : 'auto';
         canvas.style.touchAction = next === 'hand' ? 'auto' : 'none';
@@ -714,7 +737,7 @@
         current = null; pointerId = null; redraw();
       }
 
-      canvas.addEventListener('pointerdown', e => {
+      function beginDrawing(e) {
         if (!page || tool === 'hand' || pointerId !== null || (e.pointerType === 'mouse' && e.button !== 0)) return;
         e.preventDefault();
         pointerId = e.pointerId;
@@ -726,7 +749,8 @@
         if (page.inkColor) current.color = page.inkColor;
         status.textContent = 'Desenhando…';
         redraw();
-      });
+      }
+      canvas.addEventListener('pointerdown', beginDrawing);
       canvas.addEventListener('pointermove', e => {
         if (!current || e.pointerId !== pointerId) return;
         e.preventDefault();
