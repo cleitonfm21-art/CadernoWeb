@@ -56,6 +56,8 @@
         <button type="button" id="paperToggle">Papel: quadriculado</button>
         <button type="button" id="clear">Limpar folha</button>
         <button type="button" id="exportBackup">Exportar backup</button>
+        <button type="button" id="restoreBackup">Restaurar backup</button>
+        <input type="file" id="backupFile" accept=".json,application/json" hidden>
         <span id="status" class="status right" aria-live="polite">Carregando…</span>
       </div>
     </div>
@@ -139,6 +141,60 @@
         } finally {
           if (downloadUrl) setTimeout(() => URL.revokeObjectURL(downloadUrl), 30000);
         }
+      }
+
+      function validAction(action) {
+        if (!action) return false;
+        if (action.kind === 'rectangle') {
+          return [action.x, action.y, action.w, action.h].every(Number.isFinite)
+            && action.w >= 0 && action.h >= 0;
+        }
+        return ['pen', 'eraser'].includes(action.kind)
+          && Array.isArray(action.points) && action.points.length > 0
+          && action.points.every(point => Array.isArray(point)
+            && point.length === 2 && point.every(Number.isFinite));
+      }
+
+      async function restoreBackup(file) {
+        let backup;
+        try {
+          backup = JSON.parse(await file.text());
+        } catch {
+          status.textContent = 'Não foi possível ler o arquivo de backup';
+          return;
+        }
+
+        if (backup?.app !== 'CadernoWeb' || backup.version !== 1
+            || !['blank', 'grid'].includes(backup.paperStyle)
+            || !Array.isArray(backup.actions) || !backup.actions.every(validAction)) {
+          status.textContent = 'Arquivo de backup inválido ou incompatível';
+          return;
+        }
+
+        if (!confirm('Restaurar este backup e substituir o desenho e o papel da folha atual?')) return;
+
+        const { actions: restoredActions, paperStyle: restoredPaper } = backup;
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify({
+            actions: restoredActions,
+            paperStyle: restoredPaper
+          }));
+        } catch {
+          status.textContent = 'Não foi possível salvar o backup restaurado';
+          return;
+        }
+
+        actions = restoredActions;
+        paperStyle = restoredPaper;
+        current = null;
+        if (pointerId !== null && canvas.hasPointerCapture(pointerId)) {
+          canvas.releasePointerCapture(pointerId);
+        }
+        pointerId = null;
+        updatePaper();
+        updateUndo();
+        redraw();
+        status.textContent = 'Backup restaurado e salvo neste navegador';
       }
 
       function updateUndo() { undoButton.disabled = actions.length === 0; }
@@ -251,6 +307,21 @@
       undoButton.addEventListener('click', () => { if (!actions.length) return; actions.pop(); redraw(); updateUndo(); persist(); });
       document.querySelector('#paperToggle').addEventListener('click', () => { paperStyle = paperStyle === 'grid' ? 'blank' : 'grid'; updatePaper(); persist(); });
       document.querySelector('#exportBackup').addEventListener('click', exportBackup);
+      const backupFile = document.querySelector('#backupFile');
+      const restoreButton = document.querySelector('#restoreBackup');
+      restoreButton.addEventListener('click', () => backupFile.click());
+      backupFile.addEventListener('change', async () => {
+        const file = backupFile.files[0];
+        backupFile.value = '';
+        if (!file) return;
+
+        restoreButton.disabled = true;
+        try {
+          await restoreBackup(file);
+        } finally {
+          restoreButton.disabled = false;
+        }
+      });
       document.querySelector('#clear').addEventListener('click', () => {
         if (actions.length && !confirm('Limpar todos os desenhos desta folha?')) return;
         actions = []; current = null; redraw(); updateUndo(); persist();
