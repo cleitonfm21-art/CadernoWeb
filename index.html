@@ -71,8 +71,8 @@
       clip-path: polygon(0 0, 40% 0, 51% 22%, 100% 22%, 100% 100%, 0 100%); }
     #libraryMenu { width: min(92vw, 460px); max-height: 90dvh; padding: 12px; }
     .folder-toolbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-    .folder-navigation { justify-content: space-between; margin-top: 8px; }
-    #newFolder { margin-left: auto; }
+    .folder-navigation { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+    .folder-navigation button { min-width: 0; padding-inline: 4px; }
     #folderPath { flex: 1; margin: 0; overflow-wrap: anywhere; min-width: 4em; }
     .folder-list { display: grid; margin: 6px 0; }
     .folder-list button { text-align: left; overflow-wrap: anywhere; border: 0;
@@ -172,11 +172,13 @@
             </div>
           </section>
         </details>
-        <div class="folder-toolbar folder-navigation">
-          <button type="button" id="parentFolder" hidden>Voltar</button>
-          <button type="button" id="newFolder">Nova pasta</button>
-        </div>
-        <footer><form method="dialog"><button>Voltar à folha</button></form></footer>
+        <footer>
+          <form method="dialog" class="folder-navigation">
+            <button type="button" id="newFolder">Nova pasta</button>
+            <button type="button" id="parentFolder" disabled>Voltar</button>
+            <button type="submit">Voltar à folha</button>
+          </form>
+        </footer>
       </dialog>
       <dialog class="menu" id="folderDialog" aria-labelledby="folderDialogTitle">
         <h2 id="folderDialogTitle">Nova pasta</h2>
@@ -452,7 +454,7 @@
       function showFolders() {
         const folder = library.folders[folderIndex];
         const parentButton = control('parentFolder');
-        parentButton.hidden = !folder;
+        parentButton.disabled = !folder;
         control('folderActions').hidden = !folder;
         control('folderActions').open = false;
         const heading = control('folderPath');
