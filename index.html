@@ -69,9 +69,18 @@
     .folder-icon { display: inline-block; width: 1.15em; height: .9em; margin-right: .35em;
       vertical-align: -.05em; background: var(--folder-color, #d39b35);
       clip-path: polygon(0 0, 40% 0, 51% 22%, 100% 22%, 100% 100%, 0 100%); }
-    .folder-list { display: grid; gap: 6px; margin: 8px 0; }
-    .folder-list button { text-align: left; overflow-wrap: anywhere; }
-    #folderPath { margin: 8px 0; overflow-wrap: anywhere; }
+    #libraryMenu { width: min(92vw, 380px); max-height: 85dvh; padding: 12px; }
+    .folder-toolbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    #folderPath { flex: 1; margin: 0; overflow-wrap: anywhere; min-width: 4em; }
+    .folder-list { display: grid; margin: 6px 0; }
+    .folder-list button { text-align: left; overflow-wrap: anywhere; border: 0;
+      border-bottom: 1px solid #dce2ec; border-radius: 0; background: transparent; }
+    #folderActions { position: relative; }
+    #folderActions summary { cursor: pointer; padding: 8px 12px; list-style: none; }
+    #folderActions summary::-webkit-details-marker { display: none; }
+    .folder-action-list { position: absolute; right: 0; z-index: 1; display: grid; gap: 4px;
+      min-width: 145px; padding: 6px; background: white; border: 1px solid #dce2ec; border-radius: 8px; }
+    #libraryNotes > summary { cursor: pointer; padding: 8px 0; }
     .context [hidden] { display: none; }
     .menu footer { margin-top: 12px; text-align: right; }
     .danger { color: #a32525; }
@@ -137,26 +146,32 @@
       </div>
       <dialog class="menu" id="libraryMenu" aria-labelledby="libraryTitle">
         <h2 id="libraryTitle">Pastas e notas</h2>
-        <section>
-          <button type="button" id="parentFolder" hidden>Voltar à pasta anterior</button>
+        <div class="folder-toolbar">
+          <button type="button" id="parentFolder" hidden>Voltar</button>
           <h3 id="folderPath"></h3>
-          <div id="folderList" class="folder-list" aria-label="Pastas deste nível"></div>
-          <div class="menu-actions">
-            <button type="button" id="newFolder">Nova pasta</button>
-            <button type="button" id="renameFolder">Renomear pasta</button>
-            <button type="button" id="changeFolderColor">Cor da pasta</button>
-            <button type="button" id="deleteFolder" class="danger">Excluir pasta</button>
-          </div>
-        </section>
-        <section>
-          <label class="menu-label">Nota <select id="noteSelect"></select></label>
-          <div class="menu-actions">
-            <button type="button" id="newNote">Nova nota</button>
-            <button type="button" id="renameNote">Renomear nota</button>
-            <button type="button" id="moveNote">Mover nota</button>
-            <button type="button" id="deleteNote" class="danger">Excluir nota</button>
-          </div>
-        </section>
+          <button type="button" id="newFolder">Nova pasta</button>
+          <details id="folderActions" hidden>
+            <summary aria-label="Ações da pasta">⋯</summary>
+            <div class="folder-action-list">
+              <button type="button" id="renameFolder">Renomear</button>
+              <button type="button" id="changeFolderColor">Mudar cor</button>
+              <button type="button" id="deleteFolder" class="danger">Excluir pasta</button>
+            </div>
+          </details>
+        </div>
+        <div id="folderList" class="folder-list" aria-label="Pastas deste nível"></div>
+        <details id="libraryNotes">
+          <summary>Notas desta pasta</summary>
+          <section>
+            <label class="menu-label">Nota <select id="noteSelect"></select></label>
+            <div class="menu-actions">
+              <button type="button" id="newNote">Nova nota</button>
+              <button type="button" id="renameNote">Renomear nota</button>
+              <button type="button" id="moveNote">Mover nota</button>
+              <button type="button" id="deleteNote" class="danger">Excluir nota</button>
+            </div>
+          </section>
+        </details>
         <footer><form method="dialog"><button>Voltar à folha</button></form></footer>
       </dialog>
       <dialog class="menu" id="folderDialog" aria-labelledby="folderDialogTitle">
@@ -434,8 +449,9 @@
         const folder = library.folders[folderIndex];
         const parentButton = control('parentFolder');
         parentButton.hidden = !folder;
-        parentButton.textContent = folder?.parent === -1 ? 'Voltar às pastas' : 'Voltar à pasta anterior';
-        control('folderPath').textContent = folder ? folderPath(folderIndex) : 'Pastas';
+        control('folderActions').hidden = !folder;
+        control('folderActions').open = false;
+        control('folderPath').textContent = folder?.name ?? 'Pastas';
         const list = control('folderList');
         list.replaceChildren();
         library.folders.forEach((child, index) => {
@@ -1090,6 +1106,10 @@
         updatePaper();
         persist();
       });
+      control('folderActions').addEventListener('click', event => {
+        if (event.target.closest('button')) control('folderActions').open = false;
+      });
+
       control('parentFolder').addEventListener('click', () => {
         openFolder(library.folders[folderIndex]?.parent ?? -1);
         const focusTarget = folderIndex < 0 ? control('folderList').firstElementChild ?? control('newFolder') : control('parentFolder');
