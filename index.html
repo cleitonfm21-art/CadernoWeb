@@ -37,14 +37,14 @@
     .editor-controls .status { grid-column: 4 / 6; align-self: center; text-align: right; }
     .page-picker, .menu-label { display: flex; align-items: center; gap: 8px; font-size: 14px; }
     select { font: inherit; color: inherit; max-width: min(220px, 55vw); min-height: 42px;
-      border: 1px solid #cdd4df; border-radius: 8px; background: #fff; }
+      border: 1px solid #8796a9; border-radius: 8px; background: #fff; }
     button { min-height: 42px; }
     .menu-button { background: #e9eff9; }
     dialog.menu { width: min(92vw, 520px); max-width: none; padding: 20px; border: 1px solid #dce0e7;
       border-radius: 16px; color: inherit; box-shadow: 0 12px 40px #17213930; }
     dialog::backdrop { background: #17213955; }
     .menu h2 { margin: 0 0 10px; font-size: 19px; }
-    .menu section { padding: 12px 0; border-top: 1px solid #e0e5ee; }
+    .menu section { padding: 12px 0; border-top: 1px solid #a6b2c1; }
     .menu h3 { margin: 0 0 7px; font-size: 15px; }
     .menu .menu-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); align-items: stretch; }
     .menu .menu-actions > * { min-width: 0; }
@@ -62,7 +62,7 @@
       background: #fff; border: 1px solid #dce0e7; border-radius: 9px; }
     #surveyPanel summary { cursor: pointer; font-weight: 600; font-size: 14px; }
     #surveySummary { width: min(100%, 800px); margin: 0 auto 12px; }
-    button { font: inherit; font-size: 14px; border: 1px solid #cdd4df; background: #f7f8fb; border-radius: 9px; padding: 9px 12px; color: inherit; cursor: pointer; }
+    button { font: inherit; font-size: 14px; border: 1px solid #8796a9; background: #f7f8fb; border-radius: 9px; padding: 9px 12px; color: inherit; cursor: pointer; }
     button:hover { background: #eaf0fa; }
     button:focus-visible { outline: 3px solid #73aaf2; outline-offset: 2px; }
     button[aria-pressed="true"] { background: #1675d1; border-color: #1675d1; color: #fff; }
@@ -84,6 +84,7 @@
     #surveyFields .field-full { grid-column: 1 / -1; }
     #surveyFields .field-wide { grid-column: span 8; }
     #surveyFields .field-short { grid-column: span 4; }
+    #surveyFields .field-last-row { grid-column: 1 / span 6; }
     #surveyFields input { min-width: 0; font: inherit; }
     #surveySummary { white-space: pre-wrap; overflow-wrap: anywhere; }
     dialog { max-width: min(90vw, 480px); }
@@ -243,7 +244,7 @@
       const pageText = control('pageText');
       const pagePhoto = control('pagePhoto');
       const surveyLabels = ['Cliente', 'CPF', 'RG', 'E-mail', 'Telefone', 'Endereço',
-        'Número', 'Complemento', 'Bairro', 'CEP', 'Cidade', 'Ambiente', 'Data'];
+        'Número', 'Cidade', 'CEP', 'Bairro', 'Complemento', 'Ambiente', 'Data'];
       let tool = 'pen';
       let library = initialLibrary();
       let folderIndex = -1;
@@ -615,10 +616,10 @@
           const label = document.createElement('label');
           const input = document.createElement('input');
           label.textContent = field.label;
-          if (['Cliente', 'Complemento', 'Cidade'].includes(field.label)) label.className = 'field-full';
-          if (['E-mail', 'Endereço', 'Bairro'].includes(field.label)) label.className = 'field-wide';
+          if (field.label === 'Cliente') label.className = 'field-full';
+          if (['E-mail', 'Endereço', 'Cidade'].includes(field.label)) label.className = 'field-wide';
           if (['Telefone', 'CEP', 'Número'].includes(field.label)) label.className = 'field-short';
-          if (field.label === 'Ambiente') label.style.gridColumnStart = '1';
+          if (field.label === 'Ambiente') label.className = 'field-last-row';
           input.value = field.value;
           input.addEventListener('input', () => {
             const note = library.notes[noteIndex];
