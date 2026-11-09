@@ -11,7 +11,7 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
-  <title>CadernoWeb — Teste de desenho</title>
+  <title>CadernoWeb</title>
   <style>
     :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     * { box-sizing: border-box; }
@@ -21,7 +21,10 @@
     h1 { font-size: 19px; margin: 0 0 2px; letter-spacing: -.02em; }
     .sub { margin: 0 0 12px; font-size: 12px; color: #657083; }
     .tools, .options { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
-    .options { margin-top: 9px; }
+    .options, .library { margin-top: 9px; }
+    .library { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
+    .library label { display: flex; gap: 5px; align-items: center; font-size: 14px; min-width: 0; }
+    select { font: inherit; max-width: min(210px, 55vw); min-height: 38px; }
     button { font: inherit; font-size: 14px; border: 1px solid #cdd4df; background: #f7f8fb; border-radius: 9px; padding: 9px 12px; color: inherit; cursor: pointer; }
     button:hover { background: #eaf0fa; }
     button:focus-visible { outline: 3px solid #73aaf2; outline-offset: 2px; }
@@ -43,8 +46,36 @@
 <body>
   <header>
     <div class="header-inner">
-      <h1>CadernoWeb <span style="font-weight:400;color:#8a93a1">/ Protótipo 1</span></h1>
-      <p class="sub">Primeiro teste: desenhar, apagar, fazer retângulos e desfazer.</p>
+      <h1>CadernoWeb</h1>
+      <div class="library" aria-label="Organização do caderno">
+        <label>Pasta <select id="folderSelect"></select></label>
+        <button type="button" id="newFolder">Nova pasta</button>
+        <label>Nota <select id="noteSelect"></select></label>
+        <button type="button" id="newNote">Nova nota</button>
+        <button type="button" id="renameNote">Renomear nota</button>
+        <button type="button" id="moveNote">Mover nota</button>
+        <label>Folha <select id="pageSelect"></select></label>
+        <button type="button" id="newPage">Nova folha</button>
+      </div>
+      <dialog id="moveDialog">
+        <form method="dialog">
+          <label>Pasta de destino <select id="moveDestination"></select></label>
+          <button value="cancel">Cancelar</button>
+          <button id="confirmMove" value="move">Mover</button>
+        </form>
+      </dialog>
+      <dialog id="pageDialog">
+        <form method="dialog">
+          <label>Papel da nova folha
+            <select id="newPageStyle">
+              <option value="grid">Quadriculado</option>
+              <option value="blank">Em branco</option>
+            </select>
+          </label>
+          <button value="cancel">Cancelar</button>
+          <button id="confirmPage" value="create">Criar folha</button>
+        </form>
+      </dialog>
       <div class="tools" role="toolbar" aria-label="Ferramentas de desenho">
         <button type="button" data-tool="pen" aria-pressed="true">✏️ Caneta</button>
         <button type="button" data-tool="eraser" aria-pressed="false">◻ Borracha</button>
@@ -63,7 +94,7 @@
     </div>
   </header>
   <main>
-    <p class="intro">Folha 1 · Teste no Mac com o mouse. Depois testaremos a caneta no iPad.</p>
+    <p class="intro" id="location"></p>
     <section id="paper" class="paper grid" aria-label="Folha de desenho">
       <canvas id="ink" width="800" height="1100" aria-label="Área de desenho"></canvas>
       <canvas id="preview" width="800" height="1100" aria-hidden="true"></canvas>
@@ -82,36 +113,121 @@
       const pctx = preview.getContext('2d');
       const status = document.querySelector('#status');
       const undoButton = document.querySelector('#undo');
+      const folderSelect = document.querySelector('#folderSelect');
+      const noteSelect = document.querySelector('#noteSelect');
+      const pageSelect = document.querySelector('#pageSelect');
+      const renameNote = document.querySelector('#renameNote');
+      const moveNote = document.querySelector('#moveNote');
+      const newPage = document.querySelector('#newPage');
+      const locationLabel = document.querySelector('#location');
       let tool = 'pen';
-      let paperStyle = 'grid';
-      let actions = [];
+      let library = initialLibrary();
+      let folderIndex = -1;
+      let noteIndex = 0;
+      let pageIndex = 0;
+      let page = library.notes[0].pages[0];
+      let actions = page.actions;
       let current = null;
       let pointerId = null;
+
+      function initialLibrary(firstPage = { actions: [], paperStyle: 'grid' }) {
+        return { folders: [], notes: [{ title: 'Meu caderno', folder: -1, pages: [firstPage] }] };
+      }
 
       function load() {
         try {
           const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-          actions = Array.isArray(saved.actions) ? saved.actions.filter(a => a && ['pen', 'eraser', 'rectangle'].includes(a.kind)) : [];
-          paperStyle = saved.paperStyle === 'blank' ? 'blank' : 'grid';
-        } catch { actions = []; paperStyle = 'grid'; }
-        updatePaper();
-        updateUndo();
-        redraw();
+          if (validLibrary(saved)) {
+            library = saved;
+            noteIndex = Number.isInteger(saved.noteIndex) && saved.notes[saved.noteIndex] ? saved.noteIndex : 0;
+            folderIndex = saved.notes[noteIndex]?.folder ?? -1;
+            pageIndex = saved.notes[noteIndex]?.pages[saved.pageIndex] ? Number(saved.pageIndex) : 0;
+          } else if (Array.isArray(saved.actions)) {
+            library = initialLibrary({
+              actions: saved.actions.filter(validAction),
+              paperStyle: saved.paperStyle === 'blank' ? 'blank' : 'grid'
+            });
+          }
+        } catch {
+          status.textContent = 'Não foi possível ler os dados salvos';
+          return;
+        }
+        showSelection();
         status.textContent = 'Pronto';
       }
 
-      function persist() {
+      function persist(nextLibrary = library, nextNote = noteIndex, nextPage = pageIndex) {
         try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify({ actions, paperStyle }));
+          localStorage.setItem(STORAGE_KEY, JSON.stringify({
+            folders: nextLibrary.folders, notes: nextLibrary.notes,
+            noteIndex: nextNote, pageIndex: nextPage
+          }));
           status.textContent = 'Salvo neste navegador';
+          return true;
         } catch {
-          status.textContent = 'Não foi possível salvar — teste sem dados importantes';
+          status.textContent = 'Não foi possível salvar neste navegador';
+          return false;
         }
+      }
+
+      function setOptions(select, entries, selected) {
+        select.replaceChildren(...entries.map(([label, value]) => new Option(label, String(value))));
+        select.value = String(selected);
+      }
+
+      function folderName(index) {
+        const names = [];
+        while (index >= 0) {
+          const folder = library.folders[index];
+          names.unshift(folder.name);
+          index = folder.parent;
+        }
+        return names.join(' / ') || 'Sem pasta';
+      }
+
+      function showSelection() {
+        const note = library.notes[noteIndex];
+        page = note?.pages[pageIndex];
+        actions = page?.actions ?? [];
+        if (pointerId !== null && canvas.hasPointerCapture(pointerId)) {
+          canvas.releasePointerCapture(pointerId);
+        }
+        current = null;
+        pointerId = null;
+
+        setOptions(folderSelect, [['Sem pasta', -1], ...library.folders.map((_, i) => [folderName(i), i])], folderIndex);
+        const notes = library.notes.flatMap((item, i) => item.folder === folderIndex ? [[item.title, i]] : []);
+        setOptions(noteSelect, notes.length ? notes : [['Nenhuma nota', -1]], noteIndex);
+        setOptions(pageSelect, note ? note.pages.map((_, i) => [`Folha ${i + 1}`, i]) : [], pageIndex);
+        noteSelect.disabled = pageSelect.disabled = renameNote.disabled = moveNote.disabled = newPage.disabled = !note;
+        document.querySelector('#paperToggle').disabled = document.querySelector('#clear').disabled = !page;
+        paper.hidden = !page;
+        locationLabel.textContent = page ? `${note.title} · Folha ${pageIndex + 1}` : 'Crie uma nota para começar.';
+        updatePaper();
+        updateUndo();
+        redraw();
+      }
+
+      function select(nextFolder, nextNote, nextPage = 0) {
+        folderIndex = nextFolder;
+        noteIndex = nextNote;
+        pageIndex = nextPage;
+        showSelection();
+      }
+
+      function saveLibrary(next, folder, note, sheet = 0) {
+        if (!persist(next, note, sheet)) {
+          showSelection();
+          return false;
+        }
+        library = next;
+        select(folder, note, sheet);
+        return true;
       }
 
       async function exportBackup() {
         const exportedAt = new Date().toISOString();
-        const backup = { app: 'CadernoWeb', version: 1, exportedAt, actions, paperStyle };
+        const backup = { app: 'CadernoWeb', version: 2, exportedAt, folders: library.folders, notes: library.notes };
         const filename = `cadernoweb-backup-${exportedAt.replace(/[:.]/g, '-')}.json`;
         let downloadUrl;
         try {
@@ -164,43 +280,56 @@
           return;
         }
 
-        if (backup?.app !== 'CadernoWeb' || backup.version !== 1
-            || !['blank', 'grid'].includes(backup.paperStyle)
-            || !Array.isArray(backup.actions) || !backup.actions.every(validAction)) {
+        const legacy = backup?.app === 'CadernoWeb' && backup.version === 1 && validPage(backup);
+        const complete = backup?.app === 'CadernoWeb' && backup.version === 2 && validLibrary(backup);
+        if (!legacy && !complete) {
           status.textContent = 'Arquivo de backup inválido ou incompatível';
           return;
         }
 
-        if (!confirm('Restaurar este backup e substituir o desenho e o papel da folha atual?')) return;
-
-        const { actions: restoredActions, paperStyle: restoredPaper } = backup;
-        try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify({
-            actions: restoredActions,
-            paperStyle: restoredPaper
-          }));
-        } catch {
-          status.textContent = 'Não foi possível salvar o backup restaurado';
-          return;
+        if (legacy && page) {
+          if (!confirm('Substituir o desenho e o papel da folha atual pelo backup?')) return;
+          const pages = library.notes[noteIndex].pages.slice();
+          pages[pageIndex] = { actions: backup.actions, paperStyle: backup.paperStyle };
+          if (!saveLibrary(withNote({ ...library.notes[noteIndex], pages }), folderIndex, noteIndex, pageIndex)) return;
+        } else if (legacy) {
+          if (!confirm('Criar uma nota com a folha deste backup?')) return;
+          const note = { title: 'Nota restaurada', folder: folderIndex,
+            pages: [{ actions: backup.actions, paperStyle: backup.paperStyle }] };
+          if (!saveLibrary({ ...library, notes: [...library.notes, note] }, folderIndex, library.notes.length)) return;
+        } else {
+          if (!confirm('Substituir todas as pastas, notas e folhas pelo conteúdo deste backup?')) return;
+          const next = { folders: backup.folders, notes: backup.notes };
+          if (!saveLibrary(next, next.notes[0]?.folder ?? -1, next.notes.length ? 0 : -1)) return;
         }
-
-        actions = restoredActions;
-        paperStyle = restoredPaper;
-        current = null;
-        if (pointerId !== null && canvas.hasPointerCapture(pointerId)) {
-          canvas.releasePointerCapture(pointerId);
-        }
-        pointerId = null;
-        updatePaper();
-        updateUndo();
-        redraw();
         status.textContent = 'Backup restaurado e salvo neste navegador';
+      }
+
+      function validPage(value) {
+        return value && ['blank', 'grid'].includes(value.paperStyle)
+          && Array.isArray(value.actions) && value.actions.every(validAction);
+      }
+
+      function validLibrary(value) {
+        return value && Array.isArray(value.folders) && Array.isArray(value.notes)
+          && value.folders.every((folder, i) => folder && typeof folder.name === 'string'
+            && Number.isInteger(folder.parent) && folder.parent >= -1 && folder.parent < i)
+          && value.notes.every(note => note && typeof note.title === 'string'
+            && Number.isInteger(note.folder) && note.folder >= -1 && note.folder < value.folders.length
+            && Array.isArray(note.pages) && note.pages.length > 0 && note.pages.every(validPage));
+      }
+
+      function withNote(note) {
+        const notes = library.notes.slice();
+        notes[noteIndex] = note;
+        return { ...library, notes };
       }
 
       function updateUndo() { undoButton.disabled = actions.length === 0; }
       function updatePaper() {
-        paper.classList.toggle('grid', paperStyle === 'grid');
-        document.querySelector('#paperToggle').textContent = paperStyle === 'grid' ? 'Papel: quadriculado' : 'Papel: em branco';
+        const grid = page?.paperStyle !== 'blank';
+        paper.classList.toggle('grid', grid);
+        document.querySelector('#paperToggle').textContent = grid ? 'Papel: quadriculado' : 'Papel: em branco';
       }
 
       function drawAction(target, action) {
@@ -258,7 +387,7 @@
       }
 
       canvas.addEventListener('pointerdown', e => {
-        if (tool === 'hand' || pointerId !== null || (e.pointerType === 'mouse' && e.button !== 0)) return;
+        if (!page || tool === 'hand' || pointerId !== null || (e.pointerType === 'mouse' && e.button !== 0)) return;
         e.preventDefault();
         pointerId = e.pointerId;
         canvas.setPointerCapture(e.pointerId);
@@ -305,7 +434,63 @@
       canvas.addEventListener('pointercancel', e => finish(e, true));
       document.querySelectorAll('[data-tool]').forEach(b => b.addEventListener('click', () => setTool(b.dataset.tool)));
       undoButton.addEventListener('click', () => { if (!actions.length) return; actions.pop(); redraw(); updateUndo(); persist(); });
-      document.querySelector('#paperToggle').addEventListener('click', () => { paperStyle = paperStyle === 'grid' ? 'blank' : 'grid'; updatePaper(); persist(); });
+      document.querySelector('#paperToggle').addEventListener('click', () => {
+        page.paperStyle = page.paperStyle === 'grid' ? 'blank' : 'grid';
+        updatePaper();
+        persist();
+      });
+      folderSelect.addEventListener('change', () => {
+        const folder = Number(folderSelect.value);
+        select(folder, library.notes.findIndex(note => note.folder === folder));
+        persist();
+      });
+      noteSelect.addEventListener('change', () => {
+        select(folderIndex, Number(noteSelect.value));
+        persist();
+      });
+      pageSelect.addEventListener('change', () => {
+        select(folderIndex, noteIndex, Number(pageSelect.value));
+        persist();
+      });
+      document.querySelector('#newFolder').addEventListener('click', () => {
+        const name = prompt('Nome da nova pasta')?.trim();
+        if (!name) return;
+        const folders = [...library.folders, { name, parent: folderIndex }];
+        saveLibrary({ ...library, folders }, folders.length - 1, -1);
+      });
+      document.querySelector('#newNote').addEventListener('click', () => {
+        const title = prompt('Nome da nova nota', 'Nova nota')?.trim();
+        if (!title) return;
+        const note = { title, folder: folderIndex, pages: [{ actions: [], paperStyle: 'grid' }] };
+        saveLibrary({ ...library, notes: [...library.notes, note] }, folderIndex, library.notes.length);
+      });
+      renameNote.addEventListener('click', () => {
+        const note = library.notes[noteIndex];
+        const title = prompt('Nome da nota', note.title)?.trim();
+        if (title) saveLibrary(withNote({ ...note, title }), folderIndex, noteIndex, pageIndex);
+      });
+      moveNote.addEventListener('click', () => {
+        setOptions(document.querySelector('#moveDestination'),
+          [['Sem pasta', -1], ...library.folders.map((_, i) => [folderName(i), i])], folderIndex);
+        document.querySelector('#moveDialog').showModal();
+      });
+      document.querySelector('#confirmMove').addEventListener('click', event => {
+        const folder = Number(document.querySelector('#moveDestination').value);
+        if (!saveLibrary(withNote({ ...library.notes[noteIndex], folder }), folder, noteIndex, pageIndex)) {
+          event.preventDefault();
+        }
+      });
+      newPage.addEventListener('click', () => {
+        document.querySelector('#pageDialog').showModal();
+      });
+      document.querySelector('#confirmPage').addEventListener('click', event => {
+        const paperStyle = document.querySelector('#newPageStyle').value;
+        const note = library.notes[noteIndex];
+        const pages = [...note.pages, { actions: [], paperStyle }];
+        if (!saveLibrary(withNote({ ...note, pages }), folderIndex, noteIndex, pages.length - 1)) {
+          event.preventDefault();
+        }
+      });
       document.querySelector('#exportBackup').addEventListener('click', exportBackup);
       const backupFile = document.querySelector('#backupFile');
       const restoreButton = document.querySelector('#restoreBackup');
@@ -324,14 +509,16 @@
       });
       document.querySelector('#clear').addEventListener('click', () => {
         if (actions.length && !confirm('Limpar todos os desenhos desta folha?')) return;
-        actions = []; current = null; redraw(); updateUndo(); persist();
+        actions.length = 0; current = null; redraw(); updateUndo(); persist();
       });
       document.addEventListener('keydown', e => {
+        if (e.target.closest('dialog, input, select')) return;
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
           e.preventDefault(); if (actions.length) { actions.pop(); redraw(); updateUndo(); persist(); }
         }
       });
       setTool('pen');
+      showSelection();
       load();
     })();
   </script>
