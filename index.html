@@ -167,7 +167,11 @@
         <button type="button" id="editText" aria-pressed="false">Digitar</button>
         <button type="button" data-menu="photoMenu" data-needs-page>Foto</button>
         <button type="button" data-menu="paperMenu" data-needs-page>Papel e cores</button>
-        <span id="status" class="status" aria-live="polite">Carregando…</span>
+        <div class="status">
+          <span id="status" aria-live="polite">Carregando…</span>
+          <button type="button" id="syncButton" data-menu="syncDialog" hidden>Conta</button>
+          <span id="syncStatus" role="status"></span>
+        </div>
       </div>
       <dialog class="menu" id="photoMenu" aria-labelledby="photoTitle">
         <h2 id="photoTitle">Foto da folha</h2>
@@ -191,6 +195,23 @@
             <button type="button" id="clear" class="danger">Limpar desenho</button>
           </div>
         </section>
+        <footer><form method="dialog"><button>Voltar à folha</button></form></footer>
+      </dialog>
+      <dialog class="menu" id="syncDialog" aria-labelledby="syncTitle">
+        <h2 id="syncTitle">Sincronização</h2>
+        <p id="syncDialogStatus" role="status"></p>
+        <form id="syncLogin">
+          <label>E-mail <input name="email" type="email" autocomplete="username" required></label>
+          <label>Senha <input name="password" type="password" autocomplete="current-password" required></label>
+          <button>Entrar</button>
+        </form>
+        <p id="syncEmail"></p>
+        <div id="syncConflict" hidden>
+          <p>Há duas versões. Exporte o backup deste aparelho para guardar uma cópia antes de escolher.</p>
+          <button type="button" id="syncUseLocal">Enviar versão deste aparelho</button>
+          <button type="button" id="syncUseCloud">Baixar versão da nuvem</button>
+        </div>
+        <button type="button" id="syncLogout" hidden>Sair</button>
         <footer><form method="dialog"><button>Voltar à folha</button></form></footer>
       </dialog>
       <dialog class="menu" id="backupMenu" aria-labelledby="backupTitle">
@@ -269,6 +290,9 @@
       let actions = page.actions;
       let current = null;
       let pointerId = null;
+      let savedContent;
+      let localReadFailed = false;
+      let syncState = { owner: null, revision: 0, dirty: false };
 
       function initialLibrary(firstPage = { actions: [], paperStyle: 'grid' }) {
         return { folders: [], notes: [{ title: 'Meu caderno', folder: -1, pages: [firstPage] }] };
@@ -287,8 +311,16 @@
               actions: saved.actions.filter(validAction),
               paperStyle: saved.paperStyle === 'blank' ? 'blank' : 'grid'
             });
+          } else if (Object.keys(saved).length) {
+            throw new Error('Caderno local inválido');
           }
+          savedContent = JSON.stringify(notebookData(library));
+          syncState = saved.sync ?? {
+            owner: null, revision: 0,
+            dirty: savedContent !== JSON.stringify(initialLibrary())
+          };
         } catch {
+          localReadFailed = true;
           status.textContent = 'Não foi possível ler os dados salvos';
           return;
         }
@@ -296,13 +328,27 @@
         status.textContent = 'Pronto';
       }
 
-      function persist(nextLibrary = library, nextNote = noteIndex, nextPage = pageIndex) {
+      function notebookData(value) {
+        return { folders: value.folders, notes: value.notes };
+      }
+
+      function persist(nextLibrary = library, nextNote = noteIndex, nextPage = pageIndex, syncedState) {
         try {
+          if (localReadFailed) throw new Error('Caderno local inválido');
+          const content = notebookData(nextLibrary);
+          const serialized = JSON.stringify(content);
+          const changed = serialized !== savedContent;
+          const nextSync = syncedState ?? { ...syncState, dirty: syncState.dirty || changed };
           localStorage.setItem(STORAGE_KEY, JSON.stringify({
-            folders: nextLibrary.folders, notes: nextLibrary.notes,
-            noteIndex: nextNote, pageIndex: nextPage
+            ...content, noteIndex: nextNote, pageIndex: nextPage, sync: nextSync
           }));
+          savedContent = serialized;
+          syncState = nextSync;
           status.textContent = 'Salvo neste navegador';
+          if (!syncedState && changed && session) {
+            syncStatus(navigator.onLine ? 'Sincronização pendente' : 'Offline · alterações salvas no aparelho');
+            scheduleSync();
+          }
           return true;
         } catch {
           status.textContent = 'Não foi possível salvar neste navegador';
@@ -1073,9 +1119,209 @@
           e.preventDefault(); if (actions.length) { actions.pop(); redraw(); updateUndo(); persist(); }
         }
       });
+      const syncConfig = { url: 'https://vhdaaqajitufcumajisy.supabase.co', publishableKey: 'sb_publishable_JXPOuq9aQqQ7CTvO7qWplA_-p6ob-IJ' };
+      const sessionKey = STORAGE_KEY + '-session';
+      let session;
+      let syncTimer;
+      let syncing = false;
+      let accountBusy = false;
+      let syncConflict = null;
+
+      function syncStatus(message) {
+        control('syncStatus').textContent = message;
+        control('syncDialogStatus').textContent = message;
+      }
+
+      function showAccount() {
+        control('syncLogin').hidden = !!session;
+        control('syncLogout').hidden = !session;
+        control('syncEmail').textContent = session?.user.email ?? '';
+        control('syncConflict').hidden = !syncConflict;
+        control('syncLogin').querySelector('button').disabled = accountBusy || syncing;
+        control('syncLogout').disabled = accountBusy || syncing;
+      }
+
+      async function syncRequest(path, { token, body } = {}) {
+        const headers = { apikey: syncConfig.publishableKey };
+        if (token) headers.Authorization = 'Bearer ' + token;
+        if (body) headers['Content-Type'] = 'application/json';
+        const response = await fetch(syncConfig.url + path, {
+          method: body ? 'POST' : 'GET',
+          headers,
+          body: body ? JSON.stringify(body) : undefined,
+          cache: 'no-store',
+          signal: AbortSignal.timeout?.(30000)
+        });
+        if (!response.ok) {
+          const error = new Error('Falha de comunicação');
+          error.status = response.status;
+          throw error;
+        }
+        return response.json();
+      }
+
+      function saveSession(value) {
+        localStorage.setItem(sessionKey, JSON.stringify(value));
+        session = value;
+        showAccount();
+      }
+
+      async function accessToken() {
+        if (session.expires_at > Date.now() / 1000 + 60) return session.access_token;
+        try {
+          const refreshed = await syncRequest('/auth/v1/token?grant_type=refresh_token', {
+            body: { refresh_token: session.refresh_token }
+          });
+          if (refreshed.user.id !== session.user.id) throw new Error('Conta divergente');
+          saveSession(refreshed);
+          return refreshed.access_token;
+        } catch (error) {
+          if ([400, 401, 403].includes(error.status)) saveSession(null);
+          throw error;
+        }
+      }
+
+      function scheduleSync(delay = 1200) {
+        clearTimeout(syncTimer);
+        if (session && !syncConflict) syncTimer = setTimeout(syncNotebook, delay);
+      }
+
+      function useRemote(remote, owner) {
+        const next = remote.notebook;
+        const sheet = next.notes[noteIndex]?.pages[pageIndex] ? pageIndex : 0;
+        const note = next.notes[noteIndex] ? noteIndex : (next.notes.length ? 0 : -1);
+        if (!persist(next, note, sheet, { owner, revision: remote.revision, dirty: false })) return false;
+        library = next;
+        select(next.notes[note]?.folder ?? -1, note, sheet);
+        return true;
+      }
+
+      function canonicalJson(value) {
+        return JSON.stringify(value, (_, item) => {
+          if (!item || typeof item !== 'object' || Array.isArray(item)) return item;
+          return Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]]));
+        });
+      }
+
+      async function syncNotebook(choice) {
+        if (!session || syncing || accountBusy || localReadFailed || !navigator.onLine || (syncConflict && !choice)) return;
+        syncing = true;
+        showAccount();
+        syncStatus('Sincronizando…');
+        try {
+          const owner = session.user.id;
+          if (syncState.owner && syncState.owner !== owner) {
+            syncStatus('Este caderno está vinculado a outra conta.');
+            return;
+          }
+          const token = await accessToken();
+          const rows = await syncRequest('/rest/v1/cadernoweb_notebooks?select=revision,notebook', { token });
+          const remote = rows[0];
+          if (remote && (!Number.isSafeInteger(remote.revision) || !validLibrary(remote.notebook))) {
+            throw new Error('Caderno remoto inválido');
+          }
+          if (choice && remote?.revision !== syncConflict?.revision) choice = undefined;
+          const local = notebookData(library);
+          const snapshot = JSON.stringify(local);
+          if (snapshot !== savedContent) {
+            syncStatus('Há alterações que ainda não foram salvas no aparelho.');
+            return;
+          }
+          if (current || (!choice && document.activeElement?.matches('textarea, #surveyFields input, .objects-table input'))) {
+            syncStatus('Sincronização pendente');
+            return;
+          }
+          if (remote && (canonicalJson(local) === canonicalJson(notebookData(remote.notebook)))) {
+            if (!persist(library, noteIndex, pageIndex, { owner, revision: remote.revision, dirty: false })) throw new Error();
+          } else if (remote && (choice === 'cloud' || !syncState.dirty)) {
+            if (!useRemote(remote, owner)) throw new Error();
+          } else {
+            const revision = remote?.revision ?? 0;
+            if (remote && revision !== syncState.revision && choice !== 'local') {
+              syncConflict = { revision };
+              syncStatus('Há duas versões do caderno.');
+              return;
+            }
+            const nextRevision = await syncRequest('/rest/v1/rpc/cadernoweb_save_notebook', {
+              token, body: { expected_revision: revision, new_notebook: local }
+            });
+            if (!Number.isSafeInteger(nextRevision)) {
+              syncConflict = null;
+              syncStatus('A nuvem mudou. Conferindo novamente…');
+              return;
+            }
+            const dirty = JSON.stringify(notebookData(library)) !== snapshot;
+            if (!persist(library, noteIndex, pageIndex, { owner, revision: nextRevision, dirty })) throw new Error();
+          }
+          syncConflict = null;
+          syncStatus(syncState.dirty ? 'Sincronização pendente' : 'Sincronizado');
+        } catch {
+          syncStatus(session ? 'Sincronização pendente. O caderno está neste aparelho.' : 'Entre novamente para sincronizar.');
+        } finally {
+          syncing = false;
+          showAccount();
+        }
+      }
+
+      function initSync() {
+        if (!syncConfig.url || !syncConfig.publishableKey) return;
+        control('syncButton').hidden = false;
+        try {
+          session = JSON.parse(localStorage.getItem(sessionKey) || 'null');
+        } catch {
+          session = null;
+        }
+        showAccount();
+        syncStatus(session ? 'Sincronização pendente' : 'Entre para sincronizar');
+        control('syncLogin').addEventListener('submit', async event => {
+          event.preventDefault();
+          if (accountBusy || syncing) return;
+          const form = event.currentTarget;
+          accountBusy = true;
+          showAccount();
+          try {
+            const credentials = { email: form.elements.email.value.trim(), password: form.elements.password.value };
+            const signedIn = await syncRequest('/auth/v1/token?grant_type=password', { body: credentials });
+            if (syncState.owner && syncState.owner !== signedIn.user.id) {
+              syncStatus('Entre com a conta vinculada a este caderno.');
+              return;
+            }
+            saveSession(signedIn);
+            syncStatus('Sincronização pendente');
+          } catch {
+            syncStatus('Não foi possível entrar. Confira a conexão, o e-mail e a senha.');
+          } finally {
+            form.elements.password.value = '';
+            accountBusy = false;
+            showAccount();
+            scheduleSync(0);
+          }
+        });
+        control('syncLogout').addEventListener('click', () => {
+          if (syncing || accountBusy) return;
+          saveSession(null);
+          syncConflict = null;
+          showAccount();
+          syncStatus('Entre para sincronizar');
+        });
+        control('syncUseLocal').addEventListener('click', () => {
+          if (syncConflict && confirm('Substituir o caderno na nuvem pela versão deste aparelho?')) syncNotebook('local');
+        });
+        control('syncUseCloud').addEventListener('click', () => {
+          if (syncConflict && confirm('Substituir o caderno deste aparelho pela versão da nuvem?')) syncNotebook('cloud');
+        });
+        window.addEventListener('online', () => scheduleSync(0));
+        window.addEventListener('offline', () => { if (session) syncStatus('Offline · alterações salvas no aparelho'); });
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) scheduleSync(0); });
+        document.addEventListener('focusout', () => scheduleSync());
+        setInterval(() => { if (!document.hidden) syncNotebook(); }, 15000);
+        scheduleSync(0);
+      }
+
       setTool('pen');
       showSelection();
       load();
+      initSync();
       const header = document.querySelector('header');
       new ResizeObserver(() => {
         document.documentElement.style.setProperty('--header-height', `${header.offsetHeight}px`);
