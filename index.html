@@ -17,10 +17,22 @@
     * { box-sizing: border-box; }
     body { margin: 0; background: #eff1f5; color: #1c2430; }
     header { position: sticky; top: 0; z-index: 5; background: #fff; border-bottom: 1px solid #dce0e7; box-shadow: 0 2px 12px #1721390d; }
-    .header-inner { max-width: 1050px; padding: 12px 16px; margin: auto; }
+    .header-inner { max-width: 1050px; padding: calc(12px + env(safe-area-inset-top)) 16px 12px; margin: auto; }
+    :root { scroll-padding-top: calc(var(--header-height, 205px) + 12px); }
+    .sheet-list { display: grid; gap: 22px; }
+    .sheet { width: min(100%, 800px); min-width: 0; margin-inline: auto; }
+    .sheet-title { margin: 0 0 8px; font-size: 14px; color: #526278; }
+    .sheet .paper { width: 100%; }
+    button.sheet-preview { display: block; padding: 0; text-align: left; }
+    .sheet-preview img, .sheet-preview-text { position: absolute; pointer-events: none; }
+    .sheet-preview img { width: 65%; }
+    .sheet-preview-text { inset: 5%; overflow: hidden; white-space: pre-wrap;
+      overflow-wrap: break-word; font: 18px/1.5 system-ui; }
     h1 { font-size: 19px; margin: 0 0 2px; letter-spacing: -.02em; }
     .topbar, .tools, .options, .menu-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-    .topbar { justify-content: space-between; }
+    .topbar { justify-content: flex-end; }
+    .topbar > button, .page-picker select { width: 116px; height: 44px; }
+    .page-picker select { padding-inline: 10px; font-size: 14px; }
     .topbar h1 { margin-right: auto; }
     .tools { margin-top: 10px; }
     .options { margin-top: 8px; }
@@ -74,7 +86,7 @@
     #surveySummary { white-space: pre-wrap; overflow-wrap: anywhere; }
     dialog { max-width: min(90vw, 480px); }
     dialog label { display: block; margin: 8px 0; }
-    @media (max-width: 500px) { .header-inner { padding: 9px 11px; } h1 { font-size: 17px; } button { font-size: 13px; padding: 8px 10px; } main { margin-top: 12px; padding: 0 11px; } }
+    @media (max-width: 500px) { .header-inner { padding: calc(9px + env(safe-area-inset-top)) 11px 9px; } h1 { font-size: 17px; } button { font-size: 13px; padding: 8px 10px; } main { margin-top: 12px; padding: 0 11px; } }
   </style>
 </head>
 <body>
@@ -83,7 +95,7 @@
       <div class="topbar">
         <h1>CadernoWeb</h1>
         <button type="button" class="menu-button" data-menu="libraryMenu">Cadernos</button>
-        <label class="page-picker">Folha <select id="pageSelect"></select></label>
+        <label class="page-picker"><select id="pageSelect" aria-label="Ir para folha"></select></label>
         <button type="button" id="newPage">Nova folha</button>
         <button type="button" data-menu="backupMenu">Backup</button>
       </div>
@@ -202,7 +214,8 @@
         <button id="removePhoto" value="remove">Remover foto</button>
       </form>
     </dialog>
-    <section id="paper" class="paper grid" aria-label="Folha de desenho">
+    <div id="sheetList" class="sheet-list"></div>
+    <section id="paper" hidden class="paper grid" aria-label="Folha de desenho">
       <img id="pagePhoto" alt="Foto da folha" hidden>
       <textarea id="pageText" aria-label="Texto da folha" readonly spellcheck="true" inputmode="text" autocapitalize="sentences" tabindex="-1"></textarea>
       <canvas id="ink" width="800" height="1100" aria-label="Área de desenho"></canvas>
@@ -347,6 +360,65 @@
         updatePaper();
         updateUndo();
         redraw();
+        showSheets(note);
+      }
+
+      function showSheets(note) {
+        const list = control('sheetList');
+        if (!note) {
+          list.replaceChildren();
+          return;
+        }
+
+        const sheets = note.pages.map((sheet, index) => {
+          const section = document.createElement('section');
+          section.className = 'sheet';
+          const title = document.createElement('h2');
+          title.className = 'sheet-title';
+          title.textContent = `Folha ${index + 1}`;
+          section.append(title);
+          if (index === pageIndex) {
+            section.append(paper);
+            return section;
+          }
+
+          const previewButton = document.createElement('button');
+          previewButton.type = 'button';
+          previewButton.className = 'paper sheet-preview';
+          previewButton.classList.toggle('grid', sheet.paperStyle === 'grid');
+          previewButton.style.backgroundColor = sheet.paperColor ?? '#fff';
+          previewButton.setAttribute('aria-label', `Editar folha ${index + 1}`);
+          previewButton.addEventListener('click', () => {
+            const previousTop = section.getBoundingClientRect().top;
+            select(folderIndex, noteIndex, index);
+            window.scrollBy(0, paper.parentElement.getBoundingClientRect().top - previousTop);
+            persist();
+          });
+
+          if (sheet.photo) {
+            const photo = document.createElement('img');
+            photo.alt = '';
+            applyPhoto(photo, sheet.photo);
+            previewButton.append(photo);
+          }
+          if (sheet.text) {
+            const text = document.createElement('span');
+            text.className = 'sheet-preview-text';
+            text.textContent = sheet.text;
+            previewButton.append(text);
+          }
+          if (sheet.actions.length) {
+            const drawing = document.createElement('canvas');
+            drawing.width = W;
+            drawing.height = H;
+            const context = drawing.getContext('2d');
+            sheet.actions.forEach(action => drawAction(context, action));
+            previewButton.append(drawing);
+          }
+          section.append(previewButton);
+          return section;
+        });
+        list.replaceChildren(...sheets);
       }
 
       function select(nextFolder, nextNote, nextPage = 0) {
@@ -538,10 +610,14 @@
           pagePhoto.removeAttribute('src');
           return;
         }
-        pagePhoto.src = photo.data;
-        pagePhoto.style.transform = `translate(-50%, -50%) scale(${photo.scale * photo.width / 10000}, ${photo.scale * photo.height / 10000})`;
-        pagePhoto.style.left = `${50 + photo.x}%`;
-        pagePhoto.style.top = `${50 + photo.y}%`;
+        applyPhoto(pagePhoto, photo);
+      }
+
+      function applyPhoto(image, photo) {
+        image.src = photo.data;
+        image.style.transform = `translate(-50%, -50%) scale(${photo.scale * photo.width / 10000}, ${photo.scale * photo.height / 10000})`;
+        image.style.left = `${50 + photo.x}%`;
+        image.style.top = `${50 + photo.y}%`;
       }
 
       function savePage(nextPage) {
@@ -708,6 +784,7 @@
       });
       pageSelect.addEventListener('change', () => {
         select(folderIndex, noteIndex, Number(pageSelect.value));
+        paper.parentElement.scrollIntoView({ block: 'start' });
         persist();
       });
       document.querySelector('#newFolder').addEventListener('click', () => {
@@ -747,7 +824,9 @@
         const pages = [...note.pages, { actions: [], paperStyle }];
         if (!saveLibrary(withNote({ ...note, pages }), folderIndex, noteIndex, pages.length - 1)) {
           event.preventDefault();
+          return;
         }
+        requestAnimationFrame(() => paper.parentElement.scrollIntoView({ block: 'start' }));
       });
       document.querySelectorAll('[data-menu]').forEach(button => {
         button.addEventListener('click', () => control(button.dataset.menu).showModal());
@@ -756,7 +835,11 @@
         control('backupMenu').close();
         exportBackup();
       });
-      control('editText').addEventListener('click', () => setTextEditing(pageText.readOnly));
+      control('editText').addEventListener('click', () => {
+        const editing = pageText.readOnly;
+        setTextEditing(editing);
+        if (editing) pageText.focus({ preventScroll: true });
+      });
       pageText.addEventListener('input', () => {
         page.text = pageText.value;
         persist();
@@ -860,6 +943,10 @@
       setTool('pen');
       showSelection();
       load();
+      const header = document.querySelector('header');
+      new ResizeObserver(() => {
+        document.documentElement.style.setProperty('--header-height', `${header.offsetHeight}px`);
+      }).observe(header);
     })();
   </script>
   <script>
