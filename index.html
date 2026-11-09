@@ -55,6 +55,7 @@
       <div class="options">
         <button type="button" id="paperToggle">Papel: quadriculado</button>
         <button type="button" id="clear">Limpar folha</button>
+        <button type="button" id="exportBackup">Exportar backup</button>
         <span id="status" class="status right" aria-live="polite">Carregando…</span>
       </div>
     </div>
@@ -103,6 +104,40 @@
           status.textContent = 'Salvo neste navegador';
         } catch {
           status.textContent = 'Não foi possível salvar — teste sem dados importantes';
+        }
+      }
+
+      async function exportBackup() {
+        const exportedAt = new Date().toISOString();
+        const backup = { app: 'CadernoWeb', version: 1, exportedAt, actions, paperStyle };
+        const filename = `cadernoweb-backup-${exportedAt.replace(/[:.]/g, '-')}.json`;
+        let downloadUrl;
+        try {
+          const file = new File([JSON.stringify(backup)], filename, { type: 'application/json' });
+          const shareData = { files: [file] };
+          if (navigator.share && navigator.canShare && navigator.canShare(shareData)) {
+            try {
+              await navigator.share(shareData);
+              return;
+            } catch (error) {
+              if (error.name === 'AbortError') return;
+            }
+          }
+
+          downloadUrl = URL.createObjectURL(file);
+          const link = document.createElement('a');
+          link.href = downloadUrl;
+          link.download = filename;
+          document.body.appendChild(link);
+          try {
+            link.click();
+          } finally {
+            link.remove();
+          }
+        } catch {
+          status.textContent = 'Não foi possível exportar o backup';
+        } finally {
+          if (downloadUrl) setTimeout(() => URL.revokeObjectURL(downloadUrl), 30000);
         }
       }
 
@@ -215,6 +250,7 @@
       document.querySelectorAll('[data-tool]').forEach(b => b.addEventListener('click', () => setTool(b.dataset.tool)));
       undoButton.addEventListener('click', () => { if (!actions.length) return; actions.pop(); redraw(); updateUndo(); persist(); });
       document.querySelector('#paperToggle').addEventListener('click', () => { paperStyle = paperStyle === 'grid' ? 'blank' : 'grid'; updatePaper(); persist(); });
+      document.querySelector('#exportBackup').addEventListener('click', exportBackup);
       document.querySelector('#clear').addEventListener('click', () => {
         if (actions.length && !confirm('Limpar todos os desenhos desta folha?')) return;
         actions = []; current = null; redraw(); updateUndo(); persist();
