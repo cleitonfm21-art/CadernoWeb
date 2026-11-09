@@ -22,6 +22,7 @@
     .sub { margin: 0 0 12px; font-size: 12px; color: #657083; }
     .tools, .options { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
     .options, .library { margin-top: 9px; }
+    .library { padding-bottom: 6px; }
     .library { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
     .library label { display: flex; gap: 5px; align-items: center; font-size: 14px; min-width: 0; }
     select { font: inherit; max-width: min(210px, 55vw); min-height: 38px; }
@@ -39,6 +40,16 @@
     canvas { display: block; position: absolute; inset: 0; width: 100%; height: 100%; }
     #ink, #preview { touch-action: none; }
     #preview { pointer-events: none; }
+    #pagePhoto { position: absolute; left: 50%; top: 50%; width: 65%; pointer-events: none; }
+    #pageText { position: absolute; inset: 5%; width: 90%; height: 90%; resize: none;
+      border: 0; padding: 0; background: transparent; font: 18px/1.5 system-ui; pointer-events: none; }
+    #pageText.editing { z-index: 2; pointer-events: auto; outline: 2px solid #73aaf2; }
+    #surveyFields { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; padding: 8px 0; }
+    #surveyFields label { display: grid; gap: 4px; }
+    #surveyFields input { min-width: 0; font: inherit; }
+    #surveySummary { white-space: pre-wrap; overflow-wrap: anywhere; }
+    dialog { max-width: min(90vw, 480px); }
+    dialog label { display: block; margin: 8px 0; }
     .help { text-align: center; font-size: 12px; color: #687589; margin: 16px auto 0; max-width: 800px; line-height: 1.5; }
     @media (max-width: 500px) { .header-inner { padding: 9px 11px; } h1 { font-size: 17px; } button { font-size: 13px; padding: 8px 10px; } main { margin-top: 12px; padding: 0 11px; } }
   </style>
@@ -50,12 +61,16 @@
       <div class="library" aria-label="Organização do caderno">
         <label>Pasta <select id="folderSelect"></select></label>
         <button type="button" id="newFolder">Nova pasta</button>
+        <button type="button" id="renameFolder">Renomear pasta</button>
+        <button type="button" id="deleteFolder">Excluir pasta</button>
         <label>Nota <select id="noteSelect"></select></label>
         <button type="button" id="newNote">Nova nota</button>
         <button type="button" id="renameNote">Renomear nota</button>
         <button type="button" id="moveNote">Mover nota</button>
+        <button type="button" id="deleteNote">Excluir nota</button>
         <label>Folha <select id="pageSelect"></select></label>
         <button type="button" id="newPage">Nova folha</button>
+        <button type="button" id="deletePage">Excluir folha</button>
       </div>
       <dialog id="moveDialog">
         <form method="dialog">
@@ -84,6 +99,14 @@
         <button type="button" id="undo" class="right" disabled>↶ Voltar</button>
       </div>
       <div class="options">
+        <button type="button" id="editText" aria-pressed="false">Digitar</button>
+        <button type="button" id="addPhoto">Adicionar foto</button>
+        <button type="button" id="takePhoto">Câmera</button>
+        <button type="button" id="adjustPhoto">Ajustar foto</button>
+        <input type="file" id="photoFile" accept="image/*" hidden>
+        <input type="file" id="cameraFile" accept="image/*" capture="environment" hidden>
+        <label>Tinta <input type="color" id="inkColor" value="#18232d"></label>
+        <label>Cor do papel <input type="color" id="paperColor" value="#ffffff"></label>
         <button type="button" id="paperToggle">Papel: quadriculado</button>
         <button type="button" id="clear">Limpar folha</button>
         <button type="button" id="exportBackup">Exportar backup</button>
@@ -95,7 +118,27 @@
   </header>
   <main>
     <p class="intro" id="location"></p>
+    <details id="surveyPanel">
+      <summary>Dados do levantamento</summary>
+      <div id="surveyFields"></div>
+      <button type="button" id="addField">Adicionar campo</button>
+    </details>
+    <p id="surveySummary" hidden></p>
+    <dialog id="photoDialog">
+      <form method="dialog">
+        <label>Tamanho <input id="photoScale" type="range" min="25" max="200"></label>
+        <label>Largura <input id="photoWidth" type="range" min="25" max="200"></label>
+        <label>Altura <input id="photoHeight" type="range" min="25" max="200"></label>
+        <label>Posição horizontal <input id="photoX" type="range" min="-50" max="50"></label>
+        <label>Posição vertical <input id="photoY" type="range" min="-50" max="50"></label>
+        <button value="cancel">Cancelar</button>
+        <button id="savePhoto" value="save">Salvar ajuste</button>
+        <button id="removePhoto" value="remove">Remover foto</button>
+      </form>
+    </dialog>
     <section id="paper" class="paper grid" aria-label="Folha de desenho">
+      <img id="pagePhoto" alt="Foto da folha" hidden>
+      <textarea id="pageText" aria-label="Texto da folha" readonly spellcheck="true"></textarea>
       <canvas id="ink" width="800" height="1100" aria-label="Área de desenho"></canvas>
       <canvas id="preview" width="800" height="1100" aria-hidden="true"></canvas>
     </section>
@@ -120,6 +163,11 @@
       const moveNote = document.querySelector('#moveNote');
       const newPage = document.querySelector('#newPage');
       const locationLabel = document.querySelector('#location');
+      const control = id => document.getElementById(id);
+      const pageText = control('pageText');
+      const pagePhoto = control('pagePhoto');
+      const surveyLabels = ['Cliente', 'RG', 'CPF', 'Telefone', 'E-mail', 'Endereço',
+        'Número', 'Complemento', 'CEP', 'Bairro', 'Cidade', 'Ambiente', 'Data do levantamento'];
       let tool = 'pen';
       let library = initialLibrary();
       let folderIndex = -1;
@@ -203,6 +251,17 @@
         document.querySelector('#paperToggle').disabled = document.querySelector('#clear').disabled = !page;
         paper.hidden = !page;
         locationLabel.textContent = page ? `${note.title} · Folha ${pageIndex + 1}` : 'Crie uma nota para começar.';
+        setTextEditing(false);
+        pageText.value = page?.text ?? '';
+        control('inkColor').value = page?.inkColor ?? '#18232d';
+        control('paperColor').value = page?.paperColor ?? '#ffffff';
+        for (const id of ['editText', 'addPhoto', 'takePhoto', 'inkColor', 'paperColor']) control(id).disabled = !page;
+        control('deletePage').disabled = !note || note.pages.length < 2;
+        control('deleteNote').disabled = !note;
+        control('renameFolder').disabled = control('deleteFolder').disabled = folderIndex < 0;
+        control('surveyPanel').hidden = !note;
+        showPhoto();
+        showSurvey();
         updatePaper();
         updateUndo();
         redraw();
@@ -260,7 +319,7 @@
       }
 
       function validAction(action) {
-        if (!action) return false;
+        if (!action || !validColor(action.color)) return false;
         if (action.kind === 'rectangle') {
           return [action.x, action.y, action.w, action.h].every(Number.isFinite)
             && action.w >= 0 && action.h >= 0;
@@ -305,9 +364,22 @@
         status.textContent = 'Backup restaurado e salvo neste navegador';
       }
 
+      function validColor(value) {
+        return value === undefined || (typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value));
+      }
+
+      function validPhoto(photo) {
+        return photo == null || (typeof photo.data === 'string'
+          && /^data:image\/jpeg;base64,[a-z0-9+/]+=*$/i.test(photo.data)
+          && [photo.scale, photo.width, photo.height].every(value => Number.isFinite(value) && value >= 25 && value <= 200)
+          && [photo.x, photo.y].every(value => Number.isFinite(value) && Math.abs(value) <= 50));
+      }
+
       function validPage(value) {
         return value && ['blank', 'grid'].includes(value.paperStyle)
-          && Array.isArray(value.actions) && value.actions.every(validAction);
+          && Array.isArray(value.actions) && value.actions.every(validAction)
+          && (value.text === undefined || typeof value.text === 'string')
+          && validColor(value.paperColor) && validColor(value.inkColor) && validPhoto(value.photo);
       }
 
       function validLibrary(value) {
@@ -316,6 +388,8 @@
             && Number.isInteger(folder.parent) && folder.parent >= -1 && folder.parent < i)
           && value.notes.every(note => note && typeof note.title === 'string'
             && Number.isInteger(note.folder) && note.folder >= -1 && note.folder < value.folders.length
+            && (note.survey === undefined || (Array.isArray(note.survey)
+              && note.survey.every(field => field && typeof field.label === 'string' && typeof field.value === 'string')))
             && Array.isArray(note.pages) && note.pages.length > 0 && note.pages.every(validPage));
       }
 
@@ -325,10 +399,104 @@
         return { ...library, notes };
       }
 
+      function setTextEditing(editing) {
+        pageText.readOnly = !editing;
+        pageText.classList.toggle('editing', editing);
+        control('editText').setAttribute('aria-pressed', String(editing));
+        control('editText').textContent = editing ? 'Concluir texto' : 'Digitar';
+        if (editing) pageText.focus();
+      }
+
+      function surveyFields() {
+        return library.notes[noteIndex]?.survey
+          ?? surveyLabels.map(label => ({ label, value: '' }));
+      }
+
+      function showSurveySummary() {
+        const summary = control('surveySummary');
+        summary.textContent = surveyFields().filter(field => field.value.trim())
+          .map(field => `${field.label}: ${field.value}`).join(' · ');
+        summary.hidden = !page || pageIndex !== 0 || !summary.textContent;
+      }
+
+      function showSurvey() {
+        const container = control('surveyFields');
+        container.replaceChildren();
+        showSurveySummary();
+        if (!page) return;
+        surveyFields().forEach((field, i) => {
+          const label = document.createElement('label');
+          const input = document.createElement('input');
+          label.textContent = field.label;
+          input.value = field.value;
+          input.addEventListener('input', () => {
+            const note = library.notes[noteIndex];
+            const survey = surveyFields().slice();
+            survey[i] = { label: field.label, value: input.value };
+            note.survey = survey;
+            showSurveySummary();
+            persist();
+          });
+          label.append(input);
+          container.append(label);
+        });
+      }
+
+      function showPhoto() {
+        const photo = page?.photo;
+        pagePhoto.hidden = !photo;
+        control('adjustPhoto').disabled = !photo;
+        if (!photo) {
+          pagePhoto.removeAttribute('src');
+          return;
+        }
+        pagePhoto.src = photo.data;
+        pagePhoto.style.transform = `translate(-50%, -50%) scale(${photo.scale * photo.width / 10000}, ${photo.scale * photo.height / 10000})`;
+        pagePhoto.style.left = `${50 + photo.x}%`;
+        pagePhoto.style.top = `${50 + photo.y}%`;
+      }
+
+      function savePage(nextPage) {
+        const note = library.notes[noteIndex];
+        const pages = note.pages.slice();
+        pages[pageIndex] = nextPage;
+        return saveLibrary(withNote({ ...note, pages }), folderIndex, noteIndex, pageIndex);
+      }
+
+      async function loadPhoto(input) {
+        const file = input.files[0];
+        input.value = '';
+        if (!file || !page) return;
+        const target = page;
+        const url = URL.createObjectURL(file);
+        try {
+          const image = new Image();
+          image.src = url;
+          await image.decode();
+          if (page !== target) return;
+          const scale = Math.min(1, 1200 / Math.max(image.naturalWidth, image.naturalHeight));
+          const buffer = document.createElement('canvas');
+          buffer.width = Math.max(1, Math.round(image.naturalWidth * scale));
+          buffer.height = Math.max(1, Math.round(image.naturalHeight * scale));
+          const context = buffer.getContext('2d');
+          context.fillStyle = '#fff';
+          context.fillRect(0, 0, buffer.width, buffer.height);
+          context.drawImage(image, 0, 0, buffer.width, buffer.height);
+          const data = buffer.toDataURL('image/jpeg', 0.75);
+          if (!data.startsWith('data:image/jpeg;base64,')) throw Error('Foto inválida');
+          savePage({ ...target, photo: { data, scale: 100, width: 100, height: 100, x: 0, y: 0 } });
+        } catch {
+          status.textContent = 'Não foi possível abrir a foto';
+        } finally {
+          URL.revokeObjectURL(url);
+        }
+      }
+
       function updateUndo() { undoButton.disabled = actions.length === 0; }
       function updatePaper() {
         const grid = page?.paperStyle !== 'blank';
         paper.classList.toggle('grid', grid);
+        paper.style.backgroundColor = page?.paperColor ?? '#ffffff';
         document.querySelector('#paperToggle').textContent = grid ? 'Papel: quadriculado' : 'Papel: em branco';
       }
 
@@ -338,12 +506,12 @@
         target.lineCap = 'round';
         target.lineJoin = 'round';
         if (action.kind === 'rectangle') {
-          target.strokeStyle = '#17202a'; target.lineWidth = 2.7;
+          target.strokeStyle = action.color ?? '#17202a'; target.lineWidth = 2.7;
           const {x, y, w, h} = action;
           target.strokeRect(x, y, w, h);
         } else {
           target.globalCompositeOperation = action.kind === 'eraser' ? 'destination-out' : 'source-over';
-          target.strokeStyle = action.kind === 'eraser' ? '#000' : '#18232d';
+          target.strokeStyle = action.kind === 'eraser' ? '#000' : (action.color ?? '#18232d');
           target.lineWidth = action.kind === 'eraser' ? 22 : 2.8;
           const pts = action.points || [];
           if (pts.length) {
@@ -378,6 +546,7 @@
         a.w = Math.abs(x - a.startX); a.h = Math.abs(y - a.startY);
       }
       function setTool(next) {
+        setTextEditing(false);
         tool = next;
         document.querySelectorAll('[data-tool]').forEach(btn => btn.setAttribute('aria-pressed', String(btn.dataset.tool === next)));
         canvas.style.pointerEvents = next === 'hand' ? 'none' : 'auto';
@@ -395,6 +564,7 @@
         current = tool === 'rectangle'
           ? { kind: 'rectangle', startX: x, startY: y, x, y, w: 0, h: 0 }
           : { kind: tool, points: [[x, y]] };
+        if (page.inkColor) current.color = page.inkColor;
         status.textContent = 'Desenhando…';
         redraw();
       });
@@ -492,6 +662,78 @@
         }
       });
       document.querySelector('#exportBackup').addEventListener('click', exportBackup);
+      control('editText').addEventListener('click', () => setTextEditing(pageText.readOnly));
+      pageText.addEventListener('input', () => {
+        page.text = pageText.value;
+        persist();
+      });
+      control('inkColor').addEventListener('change', event => {
+        page.inkColor = event.target.value;
+        persist();
+      });
+      control('paperColor').addEventListener('change', event => {
+        page.paperColor = event.target.value;
+        updatePaper();
+        persist();
+      });
+      control('addField').addEventListener('click', () => {
+        const label = prompt('Nome do campo')?.trim();
+        if (!label) return;
+        saveLibrary(withNote({ ...library.notes[noteIndex], survey: [...surveyFields(), { label, value: '' }] }),
+          folderIndex, noteIndex, pageIndex);
+      });
+      control('addPhoto').addEventListener('click', () => control('photoFile').click());
+      control('takePhoto').addEventListener('click', () => control('cameraFile').click());
+      for (const id of ['photoFile', 'cameraFile']) control(id).addEventListener('change', event => loadPhoto(event.target));
+      const photoControls = { scale: 'photoScale', width: 'photoWidth', height: 'photoHeight', x: 'photoX', y: 'photoY' };
+      control('adjustPhoto').addEventListener('click', () => {
+        for (const [key, id] of Object.entries(photoControls)) control(id).value = page.photo[key];
+        control('photoDialog').showModal();
+      });
+      control('savePhoto').addEventListener('click', event => {
+        const photo = { ...page.photo };
+        for (const [key, id] of Object.entries(photoControls)) photo[key] = Number(control(id).value);
+        if (!savePage({ ...page, photo })) event.preventDefault();
+      });
+      control('removePhoto').addEventListener('click', event => {
+        if (!confirm('Remover a foto desta folha?') || !savePage({ ...page, photo: null })) event.preventDefault();
+      });
+      control('renameFolder').addEventListener('click', () => {
+        const folder = library.folders[folderIndex];
+        const name = prompt('Nome da pasta', folder.name)?.trim();
+        if (!name) return;
+        const folders = library.folders.slice();
+        folders[folderIndex] = { ...folder, name };
+        saveLibrary({ ...library, folders }, folderIndex, noteIndex, pageIndex);
+      });
+      control('deleteFolder').addEventListener('click', () => {
+        const removed = new Set([folderIndex]);
+        library.folders.forEach((folder, i) => {
+          if (removed.has(folder.parent)) removed.add(i);
+        });
+        if (!confirm('Excluir esta pasta, suas subpastas e as notas que elas contêm?')) return;
+        const newIndexes = new Map();
+        const folders = library.folders.flatMap((folder, i) => {
+          if (removed.has(i)) return [];
+          newIndexes.set(i, newIndexes.size);
+          return [{ ...folder, parent: newIndexes.get(folder.parent) ?? -1 }];
+        });
+        const notes = library.notes.filter(note => !removed.has(note.folder))
+          .map(note => ({ ...note, folder: newIndexes.get(note.folder) ?? -1 }));
+        saveLibrary({ folders, notes }, -1, notes.findIndex(note => note.folder === -1));
+      });
+      control('deleteNote').addEventListener('click', () => {
+        if (!confirm('Excluir esta nota e todas as suas folhas?')) return;
+        const notes = library.notes.filter((_, i) => i !== noteIndex);
+        saveLibrary({ ...library, notes }, folderIndex, notes.findIndex(note => note.folder === folderIndex));
+      });
+      control('deletePage').addEventListener('click', () => {
+        if (!confirm('Excluir esta folha?')) return;
+        const note = library.notes[noteIndex];
+        const pages = note.pages.filter((_, i) => i !== pageIndex);
+        saveLibrary(withNote({ ...note, pages }), folderIndex, noteIndex, Math.min(pageIndex, pages.length - 1));
+      });
+
       const backupFile = document.querySelector('#backupFile');
       const restoreButton = document.querySelector('#restoreBackup');
       restoreButton.addEventListener('click', () => backupFile.click());
@@ -512,7 +754,7 @@
         actions.length = 0; current = null; redraw(); updateUndo(); persist();
       });
       document.addEventListener('keydown', e => {
-        if (e.target.closest('dialog, input, select')) return;
+        if (e.target.closest('dialog, input, select, textarea')) return;
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
           e.preventDefault(); if (actions.length) { actions.pop(); redraw(); updateUndo(); persist(); }
         }
