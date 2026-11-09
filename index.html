@@ -279,14 +279,25 @@
         select.value = String(selected);
       }
 
-      function folderName(index) {
-        const names = [];
-        while (index >= 0) {
-          const folder = library.folders[index];
-          names.unshift(folder.name);
-          index = folder.parent;
+      function folderOptions() {
+        const children = new Map();
+        library.folders.forEach((folder, index) => {
+          if (!children.has(folder.parent)) children.set(folder.parent, []);
+          children.get(folder.parent).push(index);
+        });
+
+        const options = [['Sem pasta', -1]];
+        const pending = (children.get(-1) ?? []).map(index => [index, 0]).reverse();
+        while (pending.length) {
+          const [index, depth] = pending.pop();
+          const prefix = depth ? '\u00a0\u00a0'.repeat(depth) + '↳ ' : '';
+          options.push([prefix + library.folders[index].name, index]);
+          const subfolders = children.get(index) ?? [];
+          for (let i = subfolders.length - 1; i >= 0; i--) {
+            pending.push([subfolders[i], depth + 1]);
+          }
         }
-        return names.join(' / ') || 'Sem pasta';
+        return options;
       }
 
       function showSelection() {
@@ -299,7 +310,7 @@
         current = null;
         pointerId = null;
 
-        setOptions(folderSelect, [['Sem pasta', -1], ...library.folders.map((_, i) => [folderName(i), i])], folderIndex);
+        setOptions(folderSelect, folderOptions(), folderIndex);
         const notes = library.notes.flatMap((item, i) => item.folder === folderIndex ? [[item.title, i]] : []);
         setOptions(noteSelect, notes.length ? notes : [['Nenhuma nota', -1]], noteIndex);
         setOptions(pageSelect, note ? note.pages.map((_, i) => [`Folha ${i + 1}`, i]) : [], pageIndex);
@@ -698,7 +709,7 @@
       });
       moveNote.addEventListener('click', () => {
         setOptions(document.querySelector('#moveDestination'),
-          [['Sem pasta', -1], ...library.folders.map((_, i) => [folderName(i), i])], folderIndex);
+          folderOptions(), folderIndex);
         document.querySelector('#moveDialog').showModal();
       });
       document.querySelector('#confirmMove').addEventListener('click', event => {
