@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f5f6fa">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="CadernoWeb">
+  <meta name="description" content="Caderno de desenho com ferramentas para uso offline no iPad.">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
+  <title>CadernoWeb — Teste de desenho</title>
+  <style>
+    :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #eff1f5; color: #1c2430; }
+    header { position: sticky; top: 0; z-index: 5; background: #fff; border-bottom: 1px solid #dce0e7; box-shadow: 0 2px 12px #1721390d; }
+    .header-inner { max-width: 1050px; padding: 12px 16px; margin: auto; }
+    h1 { font-size: 19px; margin: 0 0 2px; letter-spacing: -.02em; }
+    .sub { margin: 0 0 12px; font-size: 12px; color: #657083; }
+    .tools, .options { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
+    .options { margin-top: 9px; }
+    button { font: inherit; font-size: 14px; border: 1px solid #cdd4df; background: #f7f8fb; border-radius: 9px; padding: 9px 12px; color: inherit; cursor: pointer; }
+    button:hover { background: #eaf0fa; }
+    button:focus-visible { outline: 3px solid #73aaf2; outline-offset: 2px; }
+    button[aria-pressed="true"] { background: #1675d1; border-color: #1675d1; color: #fff; }
+    button:disabled { opacity: .42; cursor: not-allowed; }
+    .right { margin-left: auto; }
+    .status { font-size: 12px; color: #657083; }
+    main { max-width: 1050px; margin: 20px auto 42px; padding: 0 16px; }
+    .intro { font-size: 13px; color: #657083; margin: 0 0 12px; }
+    .paper { position: relative; width: min(100%, 800px); aspect-ratio: 8 / 11; margin: 0 auto; background-color: white; border: 1px solid #d7dce6; border-radius: 3px; box-shadow: 0 10px 28px #1c26321c; overflow: hidden; }
+    .paper.grid { background-image: linear-gradient(#b6d0ee55 1px, transparent 1px), linear-gradient(90deg, #b6d0ee55 1px, transparent 1px); background-size: 3.125% 2.272727%; }
+    canvas { display: block; position: absolute; inset: 0; width: 100%; height: 100%; }
+    #ink, #preview { touch-action: none; }
+    #preview { pointer-events: none; }
+    .help { text-align: center; font-size: 12px; color: #687589; margin: 16px auto 0; max-width: 800px; line-height: 1.5; }
+    @media (max-width: 500px) { .header-inner { padding: 9px 11px; } h1 { font-size: 17px; } button { font-size: 13px; padding: 8px 10px; } main { margin-top: 12px; padding: 0 11px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <h1>CadernoWeb <span style="font-weight:400;color:#8a93a1">/ Protótipo 1</span></h1>
+      <p class="sub">Primeiro teste: desenhar, apagar, fazer retângulos e desfazer.</p>
+      <div class="tools" role="toolbar" aria-label="Ferramentas de desenho">
+        <button type="button" data-tool="pen" aria-pressed="true">✏️ Caneta</button>
+        <button type="button" data-tool="eraser" aria-pressed="false">◻ Borracha</button>
+        <button type="button" data-tool="rectangle" aria-pressed="false">▭ Retângulo</button>
+        <button type="button" data-tool="hand" aria-pressed="false">✋ Navegar</button>
+        <button type="button" id="undo" class="right" disabled>↶ Voltar</button>
+      </div>
+      <div class="options">
+        <button type="button" id="paperToggle">Papel: quadriculado</button>
+        <button type="button" id="clear">Limpar folha</button>
+        <span id="status" class="status right" aria-live="polite">Carregando…</span>
+      </div>
+    </div>
+  </header>
+  <main>
+    <p class="intro">Folha 1 · Teste no Mac com o mouse. Depois testaremos a caneta no iPad.</p>
+    <section id="paper" class="paper grid" aria-label="Folha de desenho">
+      <canvas id="ink" width="800" height="1100" aria-label="Área de desenho"></canvas>
+      <canvas id="preview" width="800" height="1100" aria-hidden="true"></canvas>
+    </section>
+    <p class="help">Cada risco, apagamento ou retângulo é um passo do botão Voltar. A folha é salva automaticamente neste navegador. Esta é uma versão experimental — não use ainda para levantamentos reais.</p>
+  </main>
+  <script>
+    (() => {
+      'use strict';
+      const W = 800, H = 1100;
+      const STORAGE_KEY = 'cadernoweb-prototipo-1';
+      const paper = document.querySelector('#paper');
+      const canvas = document.querySelector('#ink');
+      const preview = document.querySelector('#preview');
+      const ctx = canvas.getContext('2d');
+      const pctx = preview.getContext('2d');
+      const status = document.querySelector('#status');
+      const undoButton = document.querySelector('#undo');
+      let tool = 'pen';
+      let paperStyle = 'grid';
+      let actions = [];
+      let current = null;
+      let pointerId = null;
+
+      function load() {
+        try {
+          const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+          actions = Array.isArray(saved.actions) ? saved.actions.filter(a => a && ['pen', 'eraser', 'rectangle'].includes(a.kind)) : [];
+          paperStyle = saved.paperStyle === 'blank' ? 'blank' : 'grid';
+        } catch { actions = []; paperStyle = 'grid'; }
+        updatePaper();
+        updateUndo();
+        redraw();
+        status.textContent = 'Pronto';
+      }
+
+      function persist() {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify({ actions, paperStyle }));
+          status.textContent = 'Salvo neste navegador';
+        } catch {
+          status.textContent = 'Não foi possível salvar — teste sem dados importantes';
+        }
+      }
+
+      function updateUndo() { undoButton.disabled = actions.length === 0; }
+      function updatePaper() {
+        paper.classList.toggle('grid', paperStyle === 'grid');
+        document.querySelector('#paperToggle').textContent = paperStyle === 'grid' ? 'Papel: quadriculado' : 'Papel: em branco';
+      }
+
+      function drawAction(target, action) {
+        if (!action) return;
+        target.save();
+        target.lineCap = 'round';
+        target.lineJoin = 'round';
+        if (action.kind === 'rectangle') {
+          target.strokeStyle = '#17202a'; target.lineWidth = 2.7;
+          const {x, y, w, h} = action;
+          target.strokeRect(x, y, w, h);
+        } else {
+          target.globalCompositeOperation = action.kind === 'eraser' ? 'destination-out' : 'source-over';
+          target.strokeStyle = action.kind === 'eraser' ? '#000' : '#18232d';
+          target.lineWidth = action.kind === 'eraser' ? 22 : 2.8;
+          const pts = action.points || [];
+          if (pts.length) {
+            target.beginPath();
+            target.moveTo(pts[0][0], pts[0][1]);
+            if (pts.length === 1) {
+              target.lineTo(pts[0][0] + .01, pts[0][1] + .01);
+            } else {
+              for (let i=1; i<pts.length; i++) target.lineTo(pts[i][0], pts[i][1]);
+            }
+            target.stroke();
+          }
+        }
+        target.restore();
+      }
+
+      function redraw() {
+        ctx.clearRect(0, 0, W, H);
+        for (const a of actions) drawAction(ctx, a);
+        if (current && current.kind !== 'rectangle') drawAction(ctx, current);
+        pctx.clearRect(0, 0, W, H);
+        if (current && current.kind === 'rectangle') drawAction(pctx, current);
+      }
+
+      function point(e) {
+        const b = canvas.getBoundingClientRect();
+        return [Math.max(0, Math.min(W, (e.clientX - b.left) * W / b.width)),
+                Math.max(0, Math.min(H, (e.clientY - b.top) * H / b.height))];
+      }
+      function syncRectangle(a, x, y) {
+        a.x = Math.min(a.startX, x); a.y = Math.min(a.startY, y);
+        a.w = Math.abs(x - a.startX); a.h = Math.abs(y - a.startY);
+      }
+      function setTool(next) {
+        tool = next;
+        document.querySelectorAll('[data-tool]').forEach(btn => btn.setAttribute('aria-pressed', String(btn.dataset.tool === next)));
+        canvas.style.pointerEvents = next === 'hand' ? 'none' : 'auto';
+        canvas.style.touchAction = next === 'hand' ? 'auto' : 'none';
+        canvas.style.cursor = next === 'hand' ? 'default' : next === 'eraser' ? 'cell' : 'crosshair';
+        current = null; pointerId = null; redraw();
+      }
+
+      canvas.addEventListener('pointerdown', e => {
+        if (tool === 'hand' || pointerId !== null || (e.pointerType === 'mouse' && e.button !== 0)) return;
+        e.preventDefault();
+        pointerId = e.pointerId;
+        canvas.setPointerCapture(e.pointerId);
+        const [x, y] = point(e);
+        current = tool === 'rectangle'
+          ? { kind: 'rectangle', startX: x, startY: y, x, y, w: 0, h: 0 }
+          : { kind: tool, points: [[x, y]] };
+        status.textContent = 'Desenhando…';
+        redraw();
+      });
+      canvas.addEventListener('pointermove', e => {
+        if (!current || e.pointerId !== pointerId) return;
+        e.preventDefault();
+        const events = typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [e];
+        for (const ev of events.length ? events : [e]) {
+          const [x, y] = point(ev);
+          if (current.kind === 'rectangle') syncRectangle(current, x, y);
+          else {
+            const last = current.points[current.points.length-1];
+            if (Math.hypot(x - last[0], y - last[1]) > .65) current.points.push([x, y]);
+          }
+        }
+        redraw();
+      });
+      function finish(e, cancelled) {
+        if (!current || e.pointerId !== pointerId) return;
+        e.preventDefault();
+        if (!cancelled) {
+          const [x, y] = point(e);
+          if (current.kind === 'rectangle') syncRectangle(current, x, y);
+          else current.points.push([x, y]);
+          const a = current;
+          if (a.kind !== 'rectangle' || a.w >= 3 || a.h >= 3) {
+            if (a.kind === 'rectangle') { delete a.startX; delete a.startY; }
+            actions.push(a);
+          }
+        }
+        current = null;
+        if (canvas.hasPointerCapture(pointerId)) canvas.releasePointerCapture(pointerId);
+        pointerId = null;
+        redraw(); updateUndo(); persist();
+      }
+      canvas.addEventListener('pointerup', e => finish(e, false));
+      canvas.addEventListener('pointercancel', e => finish(e, true));
+      document.querySelectorAll('[data-tool]').forEach(b => b.addEventListener('click', () => setTool(b.dataset.tool)));
+      undoButton.addEventListener('click', () => { if (!actions.length) return; actions.pop(); redraw(); updateUndo(); persist(); });
+      document.querySelector('#paperToggle').addEventListener('click', () => { paperStyle = paperStyle === 'grid' ? 'blank' : 'grid'; updatePaper(); persist(); });
+      document.querySelector('#clear').addEventListener('click', () => {
+        if (actions.length && !confirm('Limpar todos os desenhos desta folha?')) return;
+        actions = []; current = null; redraw(); updateUndo(); persist();
+      });
+      document.addEventListener('keydown', e => {
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+          e.preventDefault(); if (actions.length) { actions.pop(); redraw(); updateUndo(); persist(); }
+        }
+      });
+      setTool('pen');
+      load();
+    })();
+  </script>
+  <script>
+    // O app funciona normalmente sem service worker durante os testes locais.
+    // O cache offline é habilitado apenas em HTTPS ou localhost.
+    if ('serviceWorker' in navigator && window.isSecureContext) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js', {scope: './'})
+          .catch(error => console.warn('Cache offline indisponível:', error));
+      });
+    }
+  </script>
+</body>
+</html>

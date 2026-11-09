@@ -1,0 +1,16 @@
+CadernoWeb — Fase 2: arquivos para PWA
+
+1. Copie os seis arquivos (index.html, manifest.webmanifest, sw.js e os três PNG)
+   para a pasta Documentos/CadernoWeb no seu Mac, substituindo somente index.html.
+2. Os testes existentes podem continuar no Mac (http://localhost:8000).
+3. No iPad, http://IP-DO-MAC:8000 continua servindo só para testes online.
+   O service worker/offline precisa de HTTPS para funcionar no iPad.
+4. O próximo passo é publicar apenas os ARQUIVOS DO APLICATIVO em um endereço HTTPS.
+   Não envie notas pessoais, fotos de clientes ou backups para o repositório.
+5. Após a publicação, use Safari no iPad → Compartilhar → Adicionar à Tela de Início
+   → Abrir como App da Web. Depois teste em modo avião.
+6. As notas de teste criadas no endereço IP do Mac não são transferidas
+   automaticamente para o endereço HTTPS nem para o app da tela inicial.
+
+Atenção: esta é uma versão experimental. O salvamento atual usa localStorage;
+antes do uso profissional acrescentaremos uma função de backup/exportação.
