@@ -35,7 +35,16 @@
     .menu h2 { margin: 0 0 10px; font-size: 19px; }
     .menu section { padding: 12px 0; border-top: 1px solid #e0e5ee; }
     .menu h3 { margin: 0 0 7px; font-size: 15px; }
-    .menu p { margin: 0 0 10px; color: #657083; font-size: 14px; }
+    .menu .menu-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); align-items: stretch; }
+    .menu .menu-actions > * { min-width: 0; }
+    .menu .menu-actions button { text-align: left; }
+    .menu .menu-label { display: grid; gap: 6px; }
+    .menu .menu-label select { width: 100%; max-width: none; }
+    .menu > .menu-actions + section { margin-top: 12px; }
+    .context { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin-top: 8px; }
+    .context strong { overflow-wrap: anywhere; }
+    .context span { font-size: 13px; color: #526278; overflow-wrap: anywhere; }
+    .context [hidden] { display: none; }
     .menu footer { margin-top: 12px; text-align: right; }
     .danger { color: #a32525; }
     #surveyPanel { width: min(100%, 800px); margin: 0 auto 12px; padding: 10px 12px;
@@ -50,7 +59,6 @@
     .right { margin-left: auto; }
     .status { font-size: 12px; color: #657083; }
     main { max-width: 1050px; margin: 20px auto 42px; padding: 0 16px; }
-    .intro { font-size: 13px; color: #657083; margin: 0 0 12px; }
     .paper { position: relative; width: min(100%, 800px); aspect-ratio: 8 / 11; margin: 0 auto; background-color: white; border: 1px solid #d7dce6; border-radius: 3px; box-shadow: 0 10px 28px #1c26321c; overflow: hidden; }
     .paper.grid { background-image: linear-gradient(#b6d0ee55 1px, transparent 1px), linear-gradient(90deg, #b6d0ee55 1px, transparent 1px); background-size: 3.125% 2.272727%; }
     canvas { display: block; position: absolute; inset: 0; width: 100%; height: 100%; }
@@ -66,7 +74,6 @@
     #surveySummary { white-space: pre-wrap; overflow-wrap: anywhere; }
     dialog { max-width: min(90vw, 480px); }
     dialog label { display: block; margin: 8px 0; }
-    .help { text-align: center; font-size: 12px; color: #687589; margin: 16px auto 0; max-width: 800px; line-height: 1.5; }
     @media (max-width: 500px) { .header-inner { padding: 9px 11px; } h1 { font-size: 17px; } button { font-size: 13px; padding: 8px 10px; } main { margin-top: 12px; padding: 0 11px; } }
   </style>
 </head>
@@ -79,6 +86,11 @@
         <label class="page-picker">Folha <select id="pageSelect"></select></label>
         <button type="button" id="newPage">Nova folha</button>
         <button type="button" data-menu="backupMenu">Backup</button>
+      </div>
+      <div class="context" aria-live="polite">
+        <strong id="location"></strong>
+        <span id="folderLocation"></span>
+        <span id="clientLocation" hidden></span>
       </div>
       <dialog class="menu" id="libraryMenu" aria-labelledby="libraryTitle">
         <h2 id="libraryTitle">Pastas e notas</h2>
@@ -160,7 +172,6 @@
       </dialog>
       <dialog class="menu" id="backupMenu" aria-labelledby="backupTitle">
         <h2 id="backupTitle">Backup</h2>
-        <p>Exporte uma cópia das pastas, notas e folhas ou restaure um arquivo salvo.</p>
         <div class="menu-actions">
           <button type="button" id="exportBackup">Exportar backup</button>
           <button type="button" id="restoreBackup">Restaurar backup</button>
@@ -173,7 +184,6 @@
     </div>
   </header>
   <main>
-    <p class="intro" id="location"></p>
     <details id="surveyPanel">
       <summary>Dados do levantamento</summary>
       <div id="surveyFields"></div>
@@ -194,11 +204,10 @@
     </dialog>
     <section id="paper" class="paper grid" aria-label="Folha de desenho">
       <img id="pagePhoto" alt="Foto da folha" hidden>
-      <textarea id="pageText" aria-label="Texto da folha" readonly spellcheck="true"></textarea>
+      <textarea id="pageText" aria-label="Texto da folha" readonly spellcheck="true" inputmode="text" autocapitalize="sentences" tabindex="-1"></textarea>
       <canvas id="ink" width="800" height="1100" aria-label="Área de desenho"></canvas>
       <canvas id="preview" width="800" height="1100" aria-hidden="true"></canvas>
     </section>
-    <p class="help">Cada risco, apagamento ou retângulo é um passo do botão Voltar. A folha é salva automaticamente neste navegador. Esta é uma versão experimental — não use ainda para levantamentos reais.</p>
   </main>
   <script>
     (() => {
@@ -318,7 +327,12 @@
         document.querySelector('#paperToggle').disabled = document.querySelector('#clear').disabled = !page;
         document.querySelectorAll('[data-needs-page]').forEach(button => { button.disabled = !page; });
         paper.hidden = !page;
-        locationLabel.textContent = page ? `${note.title} · Folha ${pageIndex + 1}` : 'Crie uma nota para começar.';
+        locationLabel.textContent = note?.title ?? 'Nenhuma nota';
+        const folder = library.folders[folderIndex];
+        const parent = library.folders[folder?.parent];
+        control('folderLocation').textContent = folder
+          ? [parent?.name, folder.name].filter(Boolean).join(' › ')
+          : 'Sem pasta';
         setTextEditing(false);
         pageText.value = page?.text ?? '';
         control('inkColor').value = page?.inkColor ?? '#18232d';
@@ -472,7 +486,8 @@
         pageText.classList.toggle('editing', editing);
         control('editText').setAttribute('aria-pressed', String(editing));
         control('editText').textContent = editing ? 'Concluir texto' : 'Digitar';
-        if (editing) pageText.focus();
+        pageText.tabIndex = editing ? 0 : -1;
+        if (!editing && document.activeElement === pageText) pageText.blur();
       }
 
       function surveyFields() {
@@ -481,8 +496,13 @@
       }
 
       function showSurveySummary() {
+        const fields = surveyFields();
+        const client = control('clientLocation');
+        const clientName = fields.find(field => field.label === 'Cliente')?.value.trim();
+        client.textContent = clientName ?? '';
+        client.hidden = !clientName;
         const summary = control('surveySummary');
-        summary.textContent = surveyFields().filter(field => field.value.trim())
+        summary.textContent = fields.filter(field => field.value.trim())
           .map(field => `${field.label}: ${field.value}`).join(' · ');
         summary.hidden = !page || pageIndex !== 0 || !summary.textContent;
       }
