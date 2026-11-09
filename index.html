@@ -136,6 +136,7 @@
           <div class="menu-actions">
             <button type="button" id="newFolder">Nova pasta</button>
             <button type="button" id="renameFolder">Renomear pasta</button>
+            <button type="button" id="changeFolderColor">Cor da pasta</button>
             <button type="button" id="deleteFolder" class="danger">Excluir pasta</button>
           </div>
         </section>
@@ -149,6 +150,15 @@
           </div>
         </section>
         <footer><form method="dialog"><button>Voltar à folha</button></form></footer>
+      </dialog>
+      <dialog class="menu" id="folderDialog" aria-labelledby="folderDialogTitle">
+        <h2 id="folderDialogTitle">Nova pasta</h2>
+        <form id="folderForm" method="dialog">
+          <label id="folderNameLabel">Nome <input id="folderName" required></label>
+          <label>Cor <select id="folderColor"></select></label>
+          <button type="submit" value="cancel" formnovalidate>Cancelar</button>
+          <button type="submit" id="saveFolder" value="save">Criar pasta</button>
+        </form>
       </dialog>
       <dialog id="moveDialog">
         <form method="dialog">
@@ -388,6 +398,17 @@
         select.value = String(selected);
       }
 
+      const folderColors = {
+        '': ['Sem cor', ''], blue: ['Azul', '🔵'], red: ['Vermelho', '🔴'],
+        green: ['Verde', '🟢'], yellow: ['Amarelo', '🟡'], purple: ['Roxo', '🟣'],
+        orange: ['Laranja', '🟠']
+      };
+
+      function folderLabel(folder) {
+        const marker = folderColors[folder.color]?.[1];
+        return marker ? marker + ' ' + folder.name : folder.name;
+      }
+
       function folderOptions() {
         const children = new Map();
         library.folders.forEach((folder, index) => {
@@ -400,7 +421,7 @@
         while (pending.length) {
           const [index, depth] = pending.pop();
           const prefix = depth ? '\u00a0\u00a0'.repeat(depth) + '↳ ' : '';
-          options.push([prefix + library.folders[index].name, index]);
+          options.push([prefix + folderLabel(library.folders[index]), index]);
           const subfolders = children.get(index) ?? [];
           for (let i = subfolders.length - 1; i >= 0; i--) {
             pending.push([subfolders[i], depth + 1]);
@@ -433,14 +454,14 @@
         const folder = library.folders[folderIndex];
         const parent = library.folders[folder?.parent];
         control('folderLocation').textContent = folder
-          ? [parent?.name, folder.name].filter(Boolean).join(' › ')
+          ? [parent?.name, folderLabel(folder)].filter(Boolean).join(' › ')
           : 'Sem pasta';
         setTextEditing(false);
         pageText.value = page?.text ?? '';
         for (const id of ['editText', 'addPhoto', 'takePhoto', 'inkColor', 'paperColor']) control(id).disabled = !drawingPage;
         control('deletePage').disabled = !note || note.pages.length < 2;
         control('deleteNote').disabled = !note;
-        control('renameFolder').disabled = control('deleteFolder').disabled = folderIndex < 0;
+        control('renameFolder').disabled = control('deleteFolder').disabled = control('changeFolderColor').disabled = folderIndex < 0;
         control('surveyPanel').hidden = !note;
         showPhoto();
         showSurvey();
@@ -1051,11 +1072,41 @@
         scrollToSheet();
         persist();
       });
-      document.querySelector('#newFolder').addEventListener('click', () => {
-        const name = prompt('Nome da nova pasta')?.trim();
-        if (!name) return;
-        const folders = [...library.folders, { name, parent: folderIndex }];
-        saveLibrary({ ...library, folders }, folders.length - 1, -1);
+      const folderDialog = control('folderDialog');
+      let editingFolderColor = false;
+
+      function openFolderDialog(editColor) {
+        editingFolderColor = editColor;
+        const folder = library.folders[folderIndex];
+        control('folderDialogTitle').textContent = editColor ? 'Cor da pasta' : folder ? 'Nova subpasta' : 'Nova pasta';
+        control('folderNameLabel').hidden = editColor;
+        control('folderName').disabled = editColor;
+        control('folderName').value = '';
+        control('saveFolder').textContent = editColor ? 'Salvar cor' : 'Criar pasta';
+        setOptions(control('folderColor'), Object.entries(folderColors).map(([value, [label, marker]]) =>
+          [marker ? marker + ' ' + label : label, value]), editColor ? folder.color ?? '' : '');
+        folderDialog.showModal();
+      }
+
+      control('newFolder').addEventListener('click', () => openFolderDialog(false));
+      control('changeFolderColor').addEventListener('click', () => openFolderDialog(true));
+      control('folderForm').addEventListener('submit', event => {
+        if (event.submitter?.value === 'cancel') return;
+        event.preventDefault();
+        const color = control('folderColor').value;
+        const folders = library.folders.slice();
+        if (editingFolderColor) {
+          folders[folderIndex] = { ...folders[folderIndex], color };
+          if (saveLibrary({ ...library, folders }, folderIndex, noteIndex, pageIndex)) folderDialog.close();
+          return;
+        }
+        const name = control('folderName').value.trim();
+        if (!name) {
+          control('folderName').focus();
+          return;
+        }
+        folders.push({ name, parent: folderIndex, color });
+        if (saveLibrary({ ...library, folders }, folders.length - 1, -1)) folderDialog.close();
       });
       document.querySelector('#newNote').addEventListener('click', () => {
         const title = prompt('Nome da nova nota', 'Nova nota')?.trim();
