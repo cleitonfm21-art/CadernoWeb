@@ -82,6 +82,22 @@
     .status { font-size: 12px; color: #657083; }
     main { max-width: 1050px; margin: 20px auto 42px; padding: 0 16px; }
     .paper { position: relative; width: min(100%, 800px); aspect-ratio: 8 / 11; margin: 0 auto; background-color: white; border: 1px solid #d7dce6; border-radius: 3px; box-shadow: 0 10px 28px #1c26321c; overflow: hidden; }
+    .sheet.landscape { width: 100%; }
+    .paper.landscape { aspect-ratio: 11 / 8; }
+    .paper.landscape.grid { background-size: 2.272727% 3.125%; }
+    .sheet-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+    .sheet-heading .sheet-title { margin: 0; }
+    .drawing-focus .header-inner h1, .drawing-focus .context,
+    .drawing-focus #surveyPanel, .drawing-focus #surveySummary,
+    .drawing-focus .sheet:not(.active-drawing-sheet),
+    .drawing-focus .sheet-title, .drawing-focus .sheet-orientation,
+    .drawing-focus .editor-controls > :not([data-tool="pen"], [data-tool="eraser"], [data-tool="rectangle"], #undo) { display: none; }
+    .drawing-focus .editor-controls { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .drawing-focus main { max-width: none; margin-block: 4px; }
+    .drawing-focus .sheet { width: min(100%, max(220px, calc((100dvh - var(--header-height, 52px) - 60px) * 8 / 11))); }
+    .drawing-focus .sheet.landscape { width: min(100%, max(300px, calc((100dvh - var(--header-height, 52px) - 60px) * 11 / 8))); }
+    .drawing-focus .sheet-heading { justify-content: flex-end; margin-bottom: 4px; }
+    .drawing-focus .sheet-lock { min-height: 32px; padding: 4px 8px; }
     .paper.grid { background-image: linear-gradient(#b6d0ee55 1px, transparent 1px), linear-gradient(90deg, #b6d0ee55 1px, transparent 1px); background-size: 3.125% 2.272727%; }
     canvas { display: block; position: absolute; inset: 0; width: 100%; height: 100%; }
     #ink, #preview { touch-action: none; }
@@ -100,6 +116,7 @@
     #surveySummary { white-space: pre-wrap; overflow-wrap: anywhere; }
     dialog { max-width: min(90vw, 480px); }
     dialog label { display: block; margin: 8px 0; }
+    dialog label[hidden] { display: none; }
     @media (max-width: 500px) { .header-inner { padding: calc(6px + env(safe-area-inset-top)) 11px 6px; } h1 { font-size: 17px; } button { font-size: 13px; padding: 8px 10px; } main { margin-top: 12px; padding: 0 11px; } }
   </style>
 </head>
@@ -150,6 +167,12 @@
             </select>
           </label>
           <button value="cancel">Cancelar</button>
+          <label id="newPageOrientationLabel">Orientação
+            <select id="newPageOrientation">
+              <option value="portrait">Vertical</option>
+              <option value="landscape">Horizontal</option>
+            </select>
+          </label>
           <button id="confirmPage" value="create">Criar folha</button>
         </form>
       </dialog>
@@ -290,6 +313,7 @@
       let actions = page.actions;
       let current = null;
       let pointerId = null;
+      let drawingFocus = false;
       let savedContent;
       let localReadFailed = false;
       let syncState = { owner: null, revision: 0, dirty: false };
@@ -401,6 +425,7 @@
         document.querySelector('#paperToggle').disabled = document.querySelector('#clear').disabled = !drawingPage;
         document.querySelectorAll('[data-needs-page]').forEach(button => { button.disabled = !drawingPage; });
         paper.hidden = !drawingPage;
+        if (!drawingPage) setDrawingFocus(false);
         locationLabel.textContent = note?.title ?? 'Nenhuma nota';
         const folder = library.folders[folderIndex];
         const parent = library.folders[folder?.parent];
@@ -444,14 +469,38 @@
             section.append(buildObjectsSheet(sheet, index));
             return section;
           }
+          section.classList.toggle('landscape', sheet.orientation === 'landscape');
           if (index === pageIndex) {
-            section.append(paper);
+            section.classList.add('active-drawing-sheet');
+            const heading = document.createElement('div');
+            heading.className = 'sheet-heading';
+            const orientation = document.createElement('button');
+            orientation.type = 'button';
+            orientation.className = 'sheet-orientation';
+            const landscape = sheet.orientation === 'landscape';
+            orientation.textContent = landscape ? 'Folha vertical' : 'Folha horizontal';
+            orientation.addEventListener('click', () => {
+              if (savePage({ ...sheet, orientation: landscape ? 'portrait' : 'landscape' })) scrollToSheet();
+            });
+            const lock = document.createElement('button');
+            lock.type = 'button';
+            lock.className = 'sheet-lock';
+            lock.textContent = drawingFocus ? 'Destravar folha' : 'Travar folha';
+            lock.addEventListener('click', () => {
+              setDrawingFocus(!drawingFocus);
+              lock.textContent = drawingFocus ? 'Destravar folha' : 'Travar folha';
+              if (drawingFocus) window.scrollTo(0, 0);
+              else scrollToSheet();
+            });
+            heading.append(title, orientation, lock);
+            section.append(heading, paper);
             return section;
           }
 
           const previewButton = document.createElement('button');
           previewButton.type = 'button';
           previewButton.className = 'paper sheet-preview';
+          previewButton.classList.toggle('landscape', sheet.orientation === 'landscape');
           previewButton.classList.toggle('grid', sheet.paperStyle === 'grid');
           previewButton.style.backgroundColor = sheet.paperColor ?? '#fff';
           previewButton.setAttribute('aria-label', `Editar folha ${index + 1}`);
@@ -490,8 +539,8 @@
           }
           if (sheet.actions.length) {
             const drawing = document.createElement('canvas');
-            drawing.width = W;
-            drawing.height = H;
+            drawing.width = sheet.orientation === 'landscape' ? H : W;
+            drawing.height = sheet.orientation === 'landscape' ? W : H;
             const context = drawing.getContext('2d');
             sheet.actions.forEach(action => drawAction(context, action));
             previewButton.append(drawing);
@@ -833,7 +882,24 @@
       }
 
       function updateUndo() { undoButton.disabled = actions.length === 0; }
+      function setDrawingFocus(enabled) {
+        drawingFocus = enabled;
+        document.body.classList.toggle('drawing-focus', enabled);
+        if (enabled) {
+          if (tool === 'hand') setTool('pen');
+          else setTextEditing(false);
+        }
+      }
+
       function updatePaper() {
+        const landscape = page?.orientation === 'landscape';
+        paper.classList.toggle('landscape', landscape);
+        for (const layer of [canvas, preview]) {
+          const width = landscape ? H : W;
+          const height = landscape ? W : H;
+          if (layer.width !== width) layer.width = width;
+          if (layer.height !== height) layer.height = height;
+        }
         const grid = page?.paperStyle !== 'blank';
         paper.classList.toggle('grid', grid);
         paper.style.backgroundColor = page?.paperColor ?? '#ffffff';
@@ -842,13 +908,15 @@
 
       function drawAction(target, action) {
         if (!action) return;
+        const scaleX = target.canvas.width / W;
+        const scaleY = target.canvas.height / H;
         target.save();
         target.lineCap = 'round';
         target.lineJoin = 'round';
         if (action.kind === 'rectangle') {
           target.strokeStyle = action.color ?? '#17202a'; target.lineWidth = 2.7;
           const {x, y, w, h} = action;
-          target.strokeRect(x, y, w, h);
+          target.strokeRect(x * scaleX, y * scaleY, w * scaleX, h * scaleY);
         } else {
           target.globalCompositeOperation = action.kind === 'eraser' ? 'destination-out' : 'source-over';
           target.strokeStyle = action.kind === 'eraser' ? '#000' : (action.color ?? '#18232d');
@@ -856,11 +924,14 @@
           const pts = action.points || [];
           if (pts.length) {
             target.beginPath();
-            target.moveTo(pts[0][0], pts[0][1]);
+            target.moveTo(pts[0][0] * scaleX, pts[0][1] * scaleY);
             if (pts.length === 1) {
-              target.lineTo(pts[0][0] + .01, pts[0][1] + .01);
+              target.lineTo(pts[0][0] * scaleX + .01, pts[0][1] * scaleY + .01);
             } else {
-              for (let i=1; i<pts.length; i++) target.lineTo(pts[i][0], pts[i][1]);
+              for (let i = 1; i < pts.length; i++) {
+                const [x, y] = pts[i];
+                target.lineTo(x * scaleX, y * scaleY);
+              }
             }
             target.stroke();
           }
@@ -869,10 +940,10 @@
       }
 
       function redraw() {
-        ctx.clearRect(0, 0, W, H);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
         for (const a of actions) drawAction(ctx, a);
         if (current && current.kind !== 'rectangle') drawAction(ctx, current);
-        pctx.clearRect(0, 0, W, H);
+        pctx.clearRect(0, 0, preview.width, preview.height);
         if (current && current.kind === 'rectangle') drawAction(pctx, current);
       }
 
@@ -995,6 +1066,9 @@
           event.preventDefault();
         }
       });
+      control('newPageStyle').addEventListener('change', event => {
+        control('newPageOrientationLabel').hidden = event.target.value === 'objects';
+      });
       newPage.addEventListener('click', () => {
         document.querySelector('#pageDialog').showModal();
       });
@@ -1002,6 +1076,7 @@
         const style = document.querySelector('#newPageStyle').value;
         const sheet = { actions: [], paperStyle: style === 'grid' ? 'grid' : 'blank' };
         if (style === 'objects') sheet.objects = Array.from({ length: 8 }, emptyObjectRow);
+        else if (control('newPageOrientation').value === 'landscape') sheet.orientation = 'landscape';
         const note = library.notes[noteIndex];
         const pages = [...note.pages, sheet];
         if (!saveLibrary(withNote({ ...note, pages }), folderIndex, noteIndex, pages.length - 1)) {
