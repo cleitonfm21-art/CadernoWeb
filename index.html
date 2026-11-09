@@ -353,7 +353,10 @@
       }
 
       function notebookData(value) {
-        return { folders: value.folders, notes: value.notes };
+        return {
+          folders: value.folders, notes: value.notes,
+          ...(value.gridColors && { gridColors: value.gridColors })
+        };
       }
 
       function persist(nextLibrary = library, nextNote = noteIndex, nextPage = pageIndex, syncedState) {
@@ -434,8 +437,6 @@
           : 'Sem pasta';
         setTextEditing(false);
         pageText.value = page?.text ?? '';
-        control('inkColor').value = page?.inkColor ?? '#18232d';
-        control('paperColor').value = page?.paperColor ?? '#ffffff';
         for (const id of ['editText', 'addPhoto', 'takePhoto', 'inkColor', 'paperColor']) control(id).disabled = !drawingPage;
         control('deletePage').disabled = !note || note.pages.length < 2;
         control('deleteNote').disabled = !note;
@@ -502,7 +503,7 @@
           previewButton.className = 'paper sheet-preview';
           previewButton.classList.toggle('landscape', sheet.orientation === 'landscape');
           previewButton.classList.toggle('grid', sheet.paperStyle === 'grid');
-          previewButton.style.backgroundColor = sheet.paperColor ?? '#fff';
+          previewButton.style.backgroundColor = drawingColor(sheet, 'paperColor');
           previewButton.setAttribute('aria-label', `Editar folha ${index + 1}`);
           const activateSheet = () => {
             const previousTop = section.getBoundingClientRect().top;
@@ -640,7 +641,7 @@
 
       async function exportBackup() {
         const exportedAt = new Date().toISOString();
-        const backup = { app: 'CadernoWeb', version: 2, exportedAt, folders: library.folders, notes: library.notes };
+        const backup = { app: 'CadernoWeb', version: 2, exportedAt, ...notebookData(library) };
         const filename = `cadernoweb-backup-${exportedAt.replace(/[:.]/g, '-')}.json`;
         let downloadUrl;
         try {
@@ -717,7 +718,7 @@
           if (!saveLibrary({ ...library, notes: [...library.notes, note] }, folderIndex, library.notes.length)) return;
         } else {
           if (!confirm('Substituir todas as pastas, notas e folhas pelo conteúdo deste backup?')) return;
-          const next = { folders: backup.folders, notes: backup.notes };
+          const next = notebookData(backup);
           if (!saveLibrary(next, next.notes[0]?.folder ?? -1, next.notes.length ? 0 : -1)) return;
         }
         status.textContent = 'Backup restaurado e salvo neste navegador';
@@ -745,6 +746,9 @@
 
       function validLibrary(value) {
         return value && Array.isArray(value.folders) && Array.isArray(value.notes)
+          && (value.gridColors === undefined || (value.gridColors && typeof value.gridColors === 'object'
+            && !Array.isArray(value.gridColors) && validColor(value.gridColors.inkColor)
+            && validColor(value.gridColors.paperColor)))
           && value.folders.every((folder, i) => folder && typeof folder.name === 'string'
             && Number.isInteger(folder.parent) && folder.parent >= -1 && folder.parent < i)
           && value.notes.every(note => note && typeof note.title === 'string'
@@ -891,6 +895,11 @@
         }
       }
 
+      function drawingColor(sheet, key) {
+        const shared = sheet?.paperStyle === 'grid' ? library.gridColors?.[key] : undefined;
+        return shared ?? sheet?.[key] ?? (key === 'inkColor' ? '#18232d' : '#ffffff');
+      }
+
       function updatePaper() {
         const landscape = page?.orientation === 'landscape';
         paper.classList.toggle('landscape', landscape);
@@ -902,7 +911,9 @@
         }
         const grid = page?.paperStyle !== 'blank';
         paper.classList.toggle('grid', grid);
-        paper.style.backgroundColor = page?.paperColor ?? '#ffffff';
+        control('inkColor').value = drawingColor(page, 'inkColor');
+        control('paperColor').value = drawingColor(page, 'paperColor');
+        paper.style.backgroundColor = control('paperColor').value;
         document.querySelector('#paperToggle').textContent = grid ? 'Papel: quadriculado' : 'Papel: em branco';
       }
 
@@ -975,7 +986,9 @@
         current = tool === 'rectangle'
           ? { kind: 'rectangle', startX: x, startY: y, x, y, w: 0, h: 0 }
           : { kind: tool, points: [[x, y]] };
-        if (page.inkColor) current.color = page.inkColor;
+        const ink = drawingColor(page, 'inkColor');
+        if (ink !== '#18232d' || tool !== 'rectangle' || page.inkColor
+          || (page.paperStyle === 'grid' && library.gridColors?.inkColor)) current.color = ink;
         status.textContent = 'Desenhando…';
         redraw();
       }
@@ -1101,15 +1114,18 @@
         page.text = pageText.value;
         persist();
       });
-      control('inkColor').addEventListener('change', event => {
-        page.inkColor = event.target.value;
-        persist();
-      });
-      control('paperColor').addEventListener('change', event => {
-        page.paperColor = event.target.value;
-        updatePaper();
-        persist();
-      });
+      for (const key of ['inkColor', 'paperColor']) {
+        control(key).addEventListener('change', event => {
+          if (!page || page.objects) return;
+          const color = event.target.value;
+          if (page.paperStyle === 'grid') {
+            saveLibrary({ ...library, gridColors: { ...library.gridColors, [key]: color } },
+              folderIndex, noteIndex, pageIndex);
+          } else {
+            savePage({ ...page, [key]: color });
+          }
+        });
+      }
       control('addField').addEventListener('click', () => {
         const label = prompt('Nome do campo')?.trim();
         if (!label) return;
@@ -1155,7 +1171,7 @@
         });
         const notes = library.notes.filter(note => !removed.has(note.folder))
           .map(note => ({ ...note, folder: newIndexes.get(note.folder) ?? -1 }));
-        saveLibrary({ folders, notes }, -1, notes.findIndex(note => note.folder === -1));
+        saveLibrary({ ...library, folders, notes }, -1, notes.findIndex(note => note.folder === -1));
       });
       control('deleteNote').addEventListener('click', () => {
         if (!confirm('Excluir esta nota e todas as suas folhas?')) return;
