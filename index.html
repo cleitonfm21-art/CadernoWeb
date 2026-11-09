@@ -80,14 +80,10 @@
       border: 0; padding: 0; background: transparent; font: 18px/1.5 system-ui; pointer-events: none; }
     #pageText.editing { z-index: 2; pointer-events: auto; outline: 2px solid #73aaf2; }
     #surveyFields { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 8px; padding: 8px 0; }
-    #surveyFields label { display: grid; gap: 4px; grid-column: span 4; min-width: 0; }
+    #surveyFields label { display: grid; gap: 4px; grid-column: span 6; min-width: 0; }
+    #surveyFields .field-full { grid-column: 1 / -1; }
     #surveyFields .field-wide { grid-column: span 8; }
-    #surveyFields .field-short { grid-column: span 2; }
-    @media (max-width: 520px) {
-      #surveyFields label { grid-column: span 6; }
-      #surveyFields .field-wide { grid-column: span 12; }
-      #surveyFields .field-short { grid-column: span 4; }
-    }
+    #surveyFields .field-short { grid-column: span 4; }
     #surveyFields input { min-width: 0; font: inherit; }
     #surveySummary { white-space: pre-wrap; overflow-wrap: anywhere; }
     dialog { max-width: min(90vw, 480px); }
@@ -246,8 +242,8 @@
       const control = id => document.getElementById(id);
       const pageText = control('pageText');
       const pagePhoto = control('pagePhoto');
-      const surveyLabels = ['Cliente', 'RG', 'CPF', 'Telefone', 'E-mail', 'Endereço',
-        'Número', 'Complemento', 'CEP', 'Bairro', 'Cidade', 'Ambiente', 'Data do levantamento'];
+      const surveyLabels = ['Cliente', 'CPF', 'RG', 'E-mail', 'Telefone', 'Endereço',
+        'Número', 'Complemento', 'Bairro', 'CEP', 'Cidade', 'Ambiente', 'Data'];
       let tool = 'pen';
       let library = initialLibrary();
       let folderIndex = -1;
@@ -588,8 +584,14 @@
       }
 
       function surveyFields() {
-        return library.notes[noteIndex]?.survey
-          ?? surveyLabels.map(label => ({ label, value: '' }));
+        const saved = library.notes[noteIndex]?.survey ?? [];
+        const fields = saved.map(field => field.label === 'Data do levantamento'
+          ? { ...field, label: 'Data' } : field);
+        const standard = surveyLabels.map(label => fields.find(field => field.label === label)
+          ?? { label, value: '' });
+        const extras = fields.filter((field, index) => !surveyLabels.includes(field.label)
+          || fields.findIndex(item => item.label === field.label) !== index);
+        return [...standard.slice(0, -2), ...extras, ...standard.slice(-2)];
       }
 
       function showSurveySummary() {
@@ -613,8 +615,10 @@
           const label = document.createElement('label');
           const input = document.createElement('input');
           label.textContent = field.label;
-          if (['Cliente', 'Endereço', 'E-mail'].includes(field.label)) label.className = 'field-wide';
-          if (['CEP', 'Número'].includes(field.label)) label.className = 'field-short';
+          if (['Cliente', 'Complemento', 'Cidade'].includes(field.label)) label.className = 'field-full';
+          if (['E-mail', 'Endereço', 'Bairro'].includes(field.label)) label.className = 'field-wide';
+          if (['Telefone', 'CEP', 'Número'].includes(field.label)) label.className = 'field-short';
+          if (field.label === 'Ambiente') label.style.gridColumnStart = '1';
           input.value = field.value;
           input.addEventListener('input', () => {
             const note = library.notes[noteIndex];
