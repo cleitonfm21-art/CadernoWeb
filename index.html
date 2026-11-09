@@ -66,6 +66,13 @@
     .context { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; margin-top: 3px; }
     .context strong { overflow-wrap: anywhere; }
     .context span { font-size: 13px; color: #526278; overflow-wrap: anywhere; }
+    .folder-icon { display: inline-block; width: 1.15em; height: .9em; margin-right: .35em;
+      vertical-align: -.05em; background: var(--folder-color, #d39b35);
+      clip-path: polygon(0 0, 40% 0, 51% 22%, 100% 22%, 100% 100%, 0 100%); }
+    .folder-picker { position: relative; }
+    .folder-picker > .folder-icon { position: absolute; left: .55em; top: 50%; transform: translateY(-50%); pointer-events: none; }
+    .folder-picker:has(.folder-icon:not([hidden])) select { padding-left: 2em; }
+    .folder-icon[hidden] { display: none; }
     .context [hidden] { display: none; }
     .menu footer { margin-top: 12px; text-align: right; }
     .danger { color: #a32525; }
@@ -132,7 +139,7 @@
       <dialog class="menu" id="libraryMenu" aria-labelledby="libraryTitle">
         <h2 id="libraryTitle">Pastas e notas</h2>
         <section>
-          <label class="menu-label">Pasta <select id="folderSelect"></select></label>
+          <label class="menu-label">Pasta <span class="folder-picker"><span id="selectedFolderIcon" class="folder-icon" aria-hidden="true" hidden></span><select id="folderSelect"></select></span></label>
           <div class="menu-actions">
             <button type="button" id="newFolder">Nova pasta</button>
             <button type="button" id="renameFolder">Renomear pasta</button>
@@ -404,12 +411,13 @@
         orange: ['Laranja', '🟠']
       };
 
-      function folderLabel(folder) {
-        const marker = folderColors[folder.color]?.[1];
-        return marker ? marker + ' ' + folder.name : folder.name;
+      function paintFolderIcon(icon, folder) {
+        const colors = { blue: '#3275cc', red: '#d44343', green: '#33834e',
+          yellow: '#d5a318', purple: '#8356bd', orange: '#da7425' };
+        icon.style.setProperty('--folder-color', colors[folder?.color] ?? '#d39b35');
       }
 
-      function folderOptions() {
+      function folderOptions(selected = -1) {
         const children = new Map();
         library.folders.forEach((folder, index) => {
           if (!children.has(folder.parent)) children.set(folder.parent, []);
@@ -421,7 +429,7 @@
         while (pending.length) {
           const [index, depth] = pending.pop();
           const prefix = depth ? '\u00a0\u00a0'.repeat(depth) + '↳ ' : '';
-          options.push([prefix + folderLabel(library.folders[index]), index]);
+          options.push([prefix + (index === selected ? '' : '📁 ') + library.folders[index].name, index]);
           const subfolders = children.get(index) ?? [];
           for (let i = subfolders.length - 1; i >= 0; i--) {
             pending.push([subfolders[i], depth + 1]);
@@ -441,7 +449,7 @@
         current = null;
         pointerId = null;
 
-        setOptions(folderSelect, folderOptions(), folderIndex);
+        setOptions(folderSelect, folderOptions(folderIndex), folderIndex);
         const notes = library.notes.flatMap((item, i) => item.folder === folderIndex ? [[item.title, i]] : []);
         setOptions(noteSelect, notes.length ? notes : [['Nenhuma nota', -1]], noteIndex);
         setOptions(pageSelect, note ? note.pages.map((sheet, i) => [sheet.objects ? `Folha ${i + 1} · Objetos` : `Folha ${i + 1}`, i]) : [], pageIndex);
@@ -453,9 +461,20 @@
         locationLabel.textContent = note?.title ?? 'Nenhuma nota';
         const folder = library.folders[folderIndex];
         const parent = library.folders[folder?.parent];
-        control('folderLocation').textContent = folder
-          ? [parent?.name, folderLabel(folder)].filter(Boolean).join(' › ')
-          : 'Sem pasta';
+        const selectedFolderIcon = control('selectedFolderIcon');
+        selectedFolderIcon.hidden = !folder;
+        paintFolderIcon(selectedFolderIcon, folder);
+        const folderLocation = control('folderLocation');
+        folderLocation.replaceChildren();
+        if (folder) {
+          const icon = document.createElement('span');
+          icon.className = 'folder-icon';
+          icon.setAttribute('aria-hidden', 'true');
+          paintFolderIcon(icon, folder);
+          folderLocation.append(icon, [parent?.name, folder.name].filter(Boolean).join(' › '));
+        } else {
+          folderLocation.textContent = 'Sem pasta';
+        }
         setTextEditing(false);
         pageText.value = page?.text ?? '';
         for (const id of ['editText', 'addPhoto', 'takePhoto', 'inkColor', 'paperColor']) control(id).disabled = !drawingPage;
