@@ -29,17 +29,16 @@
     .sheet-preview-text { inset: 5%; overflow: hidden; white-space: pre-wrap;
       overflow-wrap: break-word; font: 18px/1.5 system-ui; }
     h1 { font-size: 19px; margin: 0 0 2px; letter-spacing: -.02em; }
-    .topbar, .tools, .options, .menu-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-    .topbar { justify-content: flex-end; }
-    .topbar > button, .page-picker select { width: 116px; height: 44px; }
-    .page-picker select { padding-inline: 10px; font-size: 14px; }
-    .topbar h1 { margin-right: auto; }
-    .tools { margin-top: 10px; }
-    .options { margin-top: 8px; }
+    .menu-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .editor-controls { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+    .editor-controls > button, .editor-controls select { width: 100%; min-width: 0; min-height: 44px; height: 100%; }
+    .editor-controls > button { padding-inline: 4px; }
+    .editor-controls select { max-width: none; padding-inline: 6px; }
+    .editor-controls .status { grid-column: 4 / 6; align-self: center; text-align: right; }
     .page-picker, .menu-label { display: flex; align-items: center; gap: 8px; font-size: 14px; }
     select { font: inherit; color: inherit; max-width: min(220px, 55vw); min-height: 42px;
       border: 1px solid #cdd4df; border-radius: 8px; background: #fff; }
-    button, .options summary { min-height: 42px; }
+    button { min-height: 42px; }
     .menu-button { background: #e9eff9; }
     dialog.menu { width: min(92vw, 520px); max-width: none; padding: 20px; border: 1px solid #dce0e7;
       border-radius: 16px; color: inherit; box-shadow: 0 12px 40px #17213930; }
@@ -92,13 +91,7 @@
 <body>
   <header>
     <div class="header-inner">
-      <div class="topbar">
-        <h1>CadernoWeb</h1>
-        <button type="button" class="menu-button" data-menu="libraryMenu">Cadernos</button>
-        <label class="page-picker"><select id="pageSelect" aria-label="Ir para folha"></select></label>
-        <button type="button" id="newPage">Nova folha</button>
-        <button type="button" data-menu="backupMenu">Backup</button>
-      </div>
+      <h1>CadernoWeb</h1>
       <div class="context" aria-live="polite">
         <strong id="location"></strong>
         <span id="folderLocation"></span>
@@ -144,18 +137,21 @@
           <button id="confirmPage" value="create">Criar folha</button>
         </form>
       </dialog>
-      <div class="tools" role="toolbar" aria-label="Ferramentas de desenho">
-        <button type="button" data-tool="pen" aria-pressed="true">✏️ Caneta</button>
-        <button type="button" data-tool="eraser" aria-pressed="false">◻ Borracha</button>
-        <button type="button" data-tool="rectangle" aria-pressed="false">▭ Retângulo</button>
-        <button type="button" data-tool="hand" aria-pressed="false">✋ Navegar</button>
-        <button type="button" id="undo" class="right" disabled>↶ Voltar</button>
-      </div>
-      <div class="options" aria-label="Opções da folha">
+      <div class="editor-controls" role="group" aria-label="Controles do caderno">
+        <button type="button" class="menu-button" data-menu="libraryMenu">Cadernos</button>
+        <label class="page-picker"><select id="pageSelect" aria-label="Ir para folha"></select></label>
+        <button type="button" id="deletePage" class="danger">Excluir folha</button>
+        <button type="button" id="newPage">Nova folha</button>
+        <button type="button" data-menu="backupMenu">Backup</button>
+        <button type="button" data-tool="pen" aria-pressed="true">Caneta</button>
+        <button type="button" data-tool="eraser" aria-pressed="false">Borracha</button>
+        <button type="button" data-tool="rectangle" aria-pressed="false">Retângulo</button>
+        <button type="button" data-tool="hand" aria-pressed="false">Navegar</button>
+        <button type="button" id="undo" disabled>Voltar</button>
         <button type="button" id="editText" aria-pressed="false">Digitar</button>
         <button type="button" data-menu="photoMenu" data-needs-page>Foto</button>
         <button type="button" data-menu="paperMenu" data-needs-page>Papel e cores</button>
-        <span id="status" class="status right" aria-live="polite">Carregando…</span>
+        <span id="status" class="status" aria-live="polite">Carregando…</span>
       </div>
       <dialog class="menu" id="photoMenu" aria-labelledby="photoTitle">
         <h2 id="photoTitle">Foto da folha</h2>
@@ -177,7 +173,6 @@
           <h3>Conteúdo da folha</h3>
           <div class="menu-actions">
             <button type="button" id="clear" class="danger">Limpar desenho</button>
-            <button type="button" id="deletePage" class="danger">Excluir folha</button>
           </div>
         </section>
         <footer><form method="dialog"><button>Voltar à folha</button></form></footer>
