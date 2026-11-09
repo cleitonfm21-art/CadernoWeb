@@ -23,6 +23,17 @@
     .sheet { width: min(100%, 800px); min-width: 0; margin-inline: auto; }
     .sheet-title { margin: 0 0 8px; font-size: 14px; color: #526278; }
     .sheet .paper { width: 100%; }
+    .objects-sheet { padding: 12px; background: #fff; border: 1px solid #8796a9; border-radius: 9px; }
+    .objects-table { width: 100%; table-layout: fixed; border-collapse: collapse; margin-bottom: 8px; }
+    .objects-table th, .objects-table td { border: 1px solid #8796a9; }
+    .objects-table th { padding: 6px 2px; font-size: 13px; background: #eff1f5; }
+    .objects-table th:first-child { width: 34%; }
+    .objects-table th:last-child { width: 24%; }
+    .objects-table input { width: 100%; min-width: 0; padding: 6px 4px; font: inherit; font-size: 16px;
+      color: inherit; border: 0; border-radius: 0; background: transparent; }
+    .objects-table input:focus { outline: 2px solid #1675d1; outline-offset: -2px; }
+    .objects-table td { overflow-wrap: anywhere; }
+    .objects-table td:has(span) { padding: 6px 4px; }
     button.sheet-preview { display: block; padding: 0; text-align: left; }
     .sheet-preview img, .sheet-preview-text { position: absolute; pointer-events: none; }
     .sheet-preview img { width: 65%; }
@@ -131,10 +142,11 @@
       </dialog>
       <dialog id="pageDialog">
         <form method="dialog">
-          <label>Papel da nova folha
+          <label>Tipo de folha
             <select id="newPageStyle">
               <option value="grid">Quadriculado</option>
               <option value="blank">Em branco</option>
+              <option value="objects">Eletrodomésticos/Objetos</option>
             </select>
           </label>
           <button value="cancel">Cancelar</button>
@@ -243,6 +255,9 @@
       const control = id => document.getElementById(id);
       const pageText = control('pageText');
       const pagePhoto = control('pagePhoto');
+      const objectsTitle = 'Eletrodomésticos/Objetos';
+      const objectColumns = [['name', 'Objeto'], ['width', 'Larg'], ['height', 'Alt'],
+        ['depth', 'Prof'], ['room', 'Ambiente']];
       const surveyLabels = ['Cliente', 'CPF', 'RG', 'E-mail', 'Telefone', 'Endereço',
         'Número', 'Cidade', 'CEP', 'Bairro', 'Complemento', 'Ambiente', 'Data'];
       let tool = 'pen';
@@ -325,6 +340,7 @@
         const note = library.notes[noteIndex];
         page = note?.pages[pageIndex];
         actions = page?.actions ?? [];
+        const drawingPage = !!page && !page.objects;
         if (pointerId !== null && canvas.hasPointerCapture(pointerId)) {
           canvas.releasePointerCapture(pointerId);
         }
@@ -334,11 +350,11 @@
         setOptions(folderSelect, folderOptions(), folderIndex);
         const notes = library.notes.flatMap((item, i) => item.folder === folderIndex ? [[item.title, i]] : []);
         setOptions(noteSelect, notes.length ? notes : [['Nenhuma nota', -1]], noteIndex);
-        setOptions(pageSelect, note ? note.pages.map((_, i) => [`Folha ${i + 1}`, i]) : [], pageIndex);
+        setOptions(pageSelect, note ? note.pages.map((sheet, i) => [sheet.objects ? `Folha ${i + 1} · Objetos` : `Folha ${i + 1}`, i]) : [], pageIndex);
         noteSelect.disabled = pageSelect.disabled = renameNote.disabled = moveNote.disabled = newPage.disabled = !note;
-        document.querySelector('#paperToggle').disabled = document.querySelector('#clear').disabled = !page;
-        document.querySelectorAll('[data-needs-page]').forEach(button => { button.disabled = !page; });
-        paper.hidden = !page;
+        document.querySelector('#paperToggle').disabled = document.querySelector('#clear').disabled = !drawingPage;
+        document.querySelectorAll('[data-needs-page]').forEach(button => { button.disabled = !drawingPage; });
+        paper.hidden = !drawingPage;
         locationLabel.textContent = note?.title ?? 'Nenhuma nota';
         const folder = library.folders[folderIndex];
         const parent = library.folders[folder?.parent];
@@ -349,7 +365,7 @@
         pageText.value = page?.text ?? '';
         control('inkColor').value = page?.inkColor ?? '#18232d';
         control('paperColor').value = page?.paperColor ?? '#ffffff';
-        for (const id of ['editText', 'addPhoto', 'takePhoto', 'inkColor', 'paperColor']) control(id).disabled = !page;
+        for (const id of ['editText', 'addPhoto', 'takePhoto', 'inkColor', 'paperColor']) control(id).disabled = !drawingPage;
         control('deletePage').disabled = !note || note.pages.length < 2;
         control('deleteNote').disabled = !note;
         control('renameFolder').disabled = control('deleteFolder').disabled = folderIndex < 0;
@@ -372,10 +388,16 @@
         const sheets = note.pages.map((sheet, index) => {
           const section = document.createElement('section');
           section.className = 'sheet';
+          section.dataset.sheetIndex = String(index);
           const title = document.createElement('h2');
           title.className = 'sheet-title';
           title.textContent = `Folha ${index + 1}`;
           section.append(title);
+          if (sheet.objects) {
+            title.textContent = objectsTitle;
+            section.append(buildObjectsSheet(sheet, index));
+            return section;
+          }
           if (index === pageIndex) {
             section.append(paper);
             return section;
@@ -433,6 +455,75 @@
         });
         list.replaceChildren(...sheets);
         updatePreviewGestures();
+      }
+
+      function buildObjectsSheet(sheet, index) {
+        const active = index === pageIndex;
+        const wrapper = document.createElement('div');
+        wrapper.className = 'objects-sheet';
+        const table = document.createElement('table');
+        table.className = 'objects-table';
+        table.setAttribute('aria-label', objectsTitle);
+        const headings = table.createTHead().insertRow();
+        for (const [, label] of objectColumns) {
+          const heading = document.createElement('th');
+          heading.scope = 'col';
+          heading.textContent = label;
+          headings.append(heading);
+        }
+        const body = table.createTBody();
+        const appendRow = (item, rowIndex) => {
+          const row = body.insertRow();
+          for (const [key, label] of objectColumns) {
+            const cell = row.insertCell();
+            if (!active) {
+              const value = document.createElement('span');
+              value.textContent = item[key];
+              cell.append(value);
+              continue;
+            }
+            const input = document.createElement('input');
+            input.value = item[key];
+            input.setAttribute('aria-label', `${label}, linha ${rowIndex + 1}`);
+            if (['width', 'height', 'depth'].includes(key)) input.inputMode = 'decimal';
+            input.addEventListener('input', () => {
+              item[key] = input.value;
+              persist();
+            });
+            cell.append(input);
+          }
+          return row;
+        };
+        sheet.objects.forEach(appendRow);
+        wrapper.append(table);
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = active ? 'Adicionar linha' : 'Editar objetos';
+        button.addEventListener('click', () => {
+          if (!active) {
+            select(folderIndex, noteIndex, index);
+            scrollToSheet();
+            persist();
+            return;
+          }
+          const item = emptyObjectRow();
+          sheet.objects.push(item);
+          if (!persist()) {
+            sheet.objects.pop();
+            return;
+          }
+          appendRow(item, sheet.objects.length - 1).querySelector('input').focus();
+        });
+        wrapper.append(button);
+        return wrapper;
+      }
+
+      function emptyObjectRow() {
+        return { name: '', width: '', height: '', depth: '', room: '' };
+      }
+
+      function scrollToSheet() {
+        document.querySelector(`[data-sheet-index="${pageIndex}"]`)?.scrollIntoView({ block: 'start' });
       }
 
       function select(nextFolder, nextNote, nextPage = 0) {
@@ -514,6 +605,11 @@
           return;
         }
 
+        if (legacy && page?.objects) {
+          status.textContent = 'Selecione uma folha de desenho para restaurar este backup';
+          return;
+        }
+
         if (legacy && page) {
           if (!confirm('Substituir o desenho e o papel da folha atual pelo backup?')) return;
           const pages = library.notes[noteIndex].pages.slice();
@@ -547,6 +643,8 @@
         return value && ['blank', 'grid'].includes(value.paperStyle)
           && Array.isArray(value.actions) && value.actions.every(validAction)
           && (value.text === undefined || typeof value.text === 'string')
+          && (value.objects === undefined || (Array.isArray(value.objects)
+            && value.objects.every(item => item && objectColumns.every(([key]) => typeof item[key] === 'string'))))
           && validColor(value.paperColor) && validColor(value.inkColor) && validPhoto(value.photo);
       }
 
@@ -817,7 +915,7 @@
       });
       pageSelect.addEventListener('change', () => {
         select(folderIndex, noteIndex, Number(pageSelect.value));
-        paper.parentElement.scrollIntoView({ block: 'start' });
+        scrollToSheet();
         persist();
       });
       document.querySelector('#newFolder').addEventListener('click', () => {
@@ -852,14 +950,16 @@
         document.querySelector('#pageDialog').showModal();
       });
       document.querySelector('#confirmPage').addEventListener('click', event => {
-        const paperStyle = document.querySelector('#newPageStyle').value;
+        const style = document.querySelector('#newPageStyle').value;
+        const sheet = { actions: [], paperStyle: style === 'grid' ? 'grid' : 'blank' };
+        if (style === 'objects') sheet.objects = Array.from({ length: 8 }, emptyObjectRow);
         const note = library.notes[noteIndex];
-        const pages = [...note.pages, { actions: [], paperStyle }];
+        const pages = [...note.pages, sheet];
         if (!saveLibrary(withNote({ ...note, pages }), folderIndex, noteIndex, pages.length - 1)) {
           event.preventDefault();
           return;
         }
-        requestAnimationFrame(() => paper.parentElement.scrollIntoView({ block: 'start' }));
+        requestAnimationFrame(scrollToSheet);
       });
       document.querySelectorAll('[data-menu]').forEach(button => {
         button.addEventListener('click', () => control(button.dataset.menu).showModal());
